@@ -1,0 +1,28 @@
+# Local temporary files
+tmp/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Environments and secrets
+.env
+.venv/
+venv/
+
+# Training outputs
+outputs/
+runs/
+wandb/
+checkpoint*/
+*.log
+
+# Large model artifacts
+*.bin
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.gguf
