@@ -69,6 +69,24 @@ configs/eval/validation_ids_seed42_size950.csv (id, category)
 - **参数不做 per-model 定制**——config 化简后所有模型共享同一套 `max_tokens=32768 / temperature=0 / top_p=1`，若将来某模型确实需要小改，再重新引入 config 层。
 - **模型权重不入库**——`models/` 与 `results/` 都在 `.gitignore`；只有代码、脚本、docs 里手工填的结果表进 git。
 
+### 已知环境坑与解决办法
+
+运行 `scripts/generate_baseline.py` 前，先检查一下环境里的 `flash_attn` 是否与当前 torch 兼容。常见症状是引擎启动时抛：
+
+```
+ImportError: .../flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib
+```
+
+原因：`flash_attn` 的预编译 `.so` 是针对旧版 libtorch ABI 编译的，跟当前 torch（本项目实测组合 `torch==2.11.0+cu128`）符号不匹配。
+
+解决办法：本项目不依赖 `flash_attn`，vLLM 会自动 fallback 到 FlashInfer / FlashAttention 内置实现。直接卸载即可：
+
+```bash
+pip uninstall -y flash_attn
+```
+
+卸载后重跑 `scripts/generate_baseline.py`，模型能正常加载即为通过。类似的、由 pip 装到 site-packages 但 ABI 对不上 torch 的老组件（比如某些 `xformers` / 老版 `mamba_ssm`）也可以按同样方式处理——如果它们不是当前推理路径必需的，先卸载再重跑，比反复找版本组合快。
+
 ### 一次完整运行
 
 以下步骤都在项目根目录下执行。
