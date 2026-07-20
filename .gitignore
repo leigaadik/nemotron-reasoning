@@ -26,3 +26,12 @@ checkpoint*/
 *.pth
 *.safetensors
 *.gguf
+
+# Local model weight directory at the repo root (weights live outside
+# git). Anchored with a leading slash so configs/models/ is NOT matched.
+/models/
+
+# Prompting-baseline per-model artifacts. Only the aggregated
+# reports/ output is tracked; raw jsonl / csv / json under results/
+# stay local.
+/results/
