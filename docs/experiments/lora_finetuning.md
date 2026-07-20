@@ -62,11 +62,10 @@ configs/training/lora_unsloth_nemotron_30b_a3b.yaml
 
 ```bash
 python scripts/train_lora_unsloth.py \
-  --config configs/training/lora_unsloth_nemotron_30b_a3b.yaml \
-  --dry-run
+  --config configs/training/lora_unsloth_nemotron_30b_a3b.yaml
 ```
 
-后续接入真实训练逻辑时，仍然保持这个入口行为。每次训练日志开头都应该明确记录：
+训练日志开头会明确记录：
 
 - 实际读取的 YAML 绝对路径。
 - 基座模型和本地模型路径。
@@ -116,7 +115,7 @@ notebooks/
 - `src/prompting/dataset.py` 可以继续负责固定验证集读取。
 - `src/data/sft_dataset.py` 负责把 `train_split_with_cot.csv` 转成 SFT messages。
 - `src/training/stratified_sampler.py` 从 notebook 中抽出分层 batch 顺序逻辑。
-- `scripts/train_lora_unsloth.py` 只负责训练，不负责打包和验证。
+- `scripts/train_lora_unsloth.py` 负责读取 YAML、构造数据、加载 Unsloth 模型、创建 LoRA、启动 TRL SFT 训练并保存 adapter。
 - `scripts/package_lora_submission.py` 只负责生成竞赛需要的 `submission.zip`。
 - `scripts/evaluate_adapter.py` 负责加载 base model + adapter，在固定验证集上生成回答并复用 `src/evaluation/scoring.py` 打分。
 
