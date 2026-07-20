@@ -97,11 +97,7 @@ max_model_len: 8192
 NVIDIA RTX PRO 6000 Blackwell Server Edition
 ```
 
-该环境适合 Nemotron 模型的轻量微调和高吞吐推理。对于本项目而言，可以把本地和云端硬件分工理解为：
-
-- 本地 RTX A6000：适合数据处理、训练脚本调试、小规模 LoRA/QLoRA 实验。
-- 官方 G4 / RTX PRO 6000 Blackwell：更接近比赛推荐环境，适合正式复现和提交前验证。
-- H200 / B200：如果可用，适合更大 batch、更长上下文和更多超参数 sweep。
+提交的 LoRA adapter 需要能在官方评测环境中由 vLLM 加载。训练和验证时应尽量对齐官方评测参数，特别是 `max_lora_rank=32`、`max_model_len=8192`、`max_tokens=7680`、`temperature=0.0` 和 `top_p=1.0`。
 
 ## Quick Start
 
@@ -115,7 +111,10 @@ cd nemotron-reasoning
 创建并激活 Conda 虚拟环境：
 
 ```bash
-conda create -n nemotron python=3.12 -y
+conda create -n nemotron python=3.10 -y \
+  --override-channels \
+  -c http://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main \
+  -c http://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
 conda activate nemotron
 ```
 
@@ -128,7 +127,28 @@ python --version
 期望版本：
 
 ```text
-Python 3.12.x
+Python 3.10.x
+```
+
+安装核心推理与训练依赖：
+
+```bash
+python -m pip install "vllm==0.23.0" "transformers==5.14.1"
+
+python -m pip install \
+  "trl==0.26.1" \
+  "peft==0.18.0" \
+  "datasets==3.5.0" \
+  "bitsandbytes==0.49.0" \
+  "unsloth==2024.9.post3" \
+  "unsloth-zoo==2024.11.4" \
+  "xformers==0.0.31"
+```
+
+如果环境中存在 `flash_attn`，但它与当前 PyTorch / CUDA ABI 不兼容，可以卸载：
+
+```bash
+python -m pip uninstall -y flash_attn flash-attn
 ```
 
 ## 项目思路
