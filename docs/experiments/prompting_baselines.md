@@ -34,13 +34,13 @@ configs/eval/validation_ids_seed42_size950.csv (id, category)
         |  vllm.LLM.generate   (temperature=0, top_p=1, max_tokens=32768)
         |
         v
-== 阶段 1  scripts/generate_baseline.py  (GPU, 慢) ==
+== 阶段 1  scripts/generate_baseline.py ==
    results/prompting_baselines/<model>/
        <model>_raw_outputs.jsonl     # 每题一行原始生成
        <model>_run.yaml              # 参数快照 + git commit + 时间戳
         |
         v
-== 阶段 2  scripts/evaluate_baseline.py  (CPU, 秒级, 可重跑) ==
+== 阶段 2  scripts/evaluate_baseline.py ==
    同目录再写入:
        <model>_validation.csv        # 950 行 per-example: id/prompt/answer/output/category/predicted/correct
        <model>_results.csv           # 每类 + TOTAL: correct/total/weightage/percentage/contribution
@@ -71,44 +71,42 @@ configs/eval/validation_ids_seed42_size950.csv (id, category)
 
 ### 一次完整运行
 
+以下步骤都在项目根目录下执行。
+
+#### 步骤 0：下载模型权重
+
+模型权重不入库，需要自己下载到 `models/` 目录下。以 Qwen3-30B-A3B 为例：
+
 ```bash
-PY=/opt/conda/bin/python
-cd <REPO_ROOT>
+huggingface-cli download Qwen/Qwen3-30B-A3B \
+    --local-dir ./models/Qwen3-30B-A3B 
+```
 
-# 阶段 1：三次调用，每次一个模型（GPU 串行）
-$PY scripts/generate_baseline.py \
-    --model-name nemotron-3-nano-30b-a3b \
-    --model-path <REPO_ROOT>/models/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
-    --out results/prompting_baselines/nemotron-3-nano-30b-a3b
+下载完成后核对目录里包含 `config.json`、`tokenizer.json`、`tokenizer_config.json` 以及若干 `model-*.safetensors` 分片。
 
-$PY scripts/generate_baseline.py \
+#### 步骤 1：生成阶段
+
+每个模型独立进程串行跑，避免同一进程内切换 vLLM 实例造成显存残留。
+
+```bash
+python scripts/generate_baseline.py \
     --model-name qwen3-30b-a3b \
-    --model-path <REPO_ROOT>/models/Qwen3-30B-A3B \
+    --model-path ./models/Qwen3-30B-A3B \
     --out results/prompting_baselines/qwen3-30b-a3b
-
-$PY scripts/generate_baseline.py \
-    --model-name glm-4.7-flash \
-    --model-path <REPO_ROOT>/models/GLM-4.7-Flash \
-    --out results/prompting_baselines/glm-4.7-flash
-
-# 阶段 2：一次评估三个 run-dir
-$PY scripts/evaluate_baseline.py \
-    --run-dir results/prompting_baselines/nemotron-3-nano-30b-a3b \
-    --run-dir results/prompting_baselines/qwen3-30b-a3b \
-    --run-dir results/prompting_baselines/glm-4.7-flash
 ```
 
-阶段 2 会在每个 run-dir 里打印一张类似 `adapter_validation.ipynb` cell 24 的表：
+产物：
+- `results/prompting_baselines/qwen3-30b-a3b/qwen3-30b-a3b_raw_outputs.jsonl`
+- `results/prompting_baselines/qwen3-30b-a3b/qwen3-30b-a3b_run.yaml`
 
-```
-              correct  total  weightage  percentage  contribution
-bit_manipulation   ...    ...      ...        ...%          ...%
-cipher             ...    ...      ...        ...%          ...%
-...
-TOTAL              ...    950   100.0%       ...%          ...%
+#### 步骤 2：评估阶段
+
+```bash
+python scripts/evaluate_baseline.py \
+    --run-dir results/prompting_baselines/qwen3-30b-a3b
 ```
 
-TOTAL 行的 `percentage` 即该模型 zero-shot 准确率；填入本文档 `## 目标结果格式` 表格即完成一轮对比实验。
+也支持一次传入多个 `--run-dir` 一起评估。
 
 ## Prompt 协议
 
@@ -149,84 +147,53 @@ prompt + "\nPlease put your final answer inside `\\boxed{}`. For example: `\\box
 - `cost_estimate`：估算调用成本。
 - `notes`：模型异常、格式失败、限流等备注。
 
+## 实验结果
+
+截至最近一次评估，3 个模型的完成情况如下：
+
+| 模型 | 状态 | Overall Accuracy | 备注 |
+|---|---|---:|---|
+| Qwen3-30B-A3B | 已完成 | **65.3%** (620 / 950) | 见下方分类明细 |
+| GLM-4.7-Flash | 进行中 | — | 因 vLLM MLA kernel 不兼容，需要 `VLLM_MLA_DISABLE=1` 绕开 |
+| Nemotron-3-Nano-30B-A3B | 未完成 | — | vLLM 0.23 内置 `nemotron_h` 加载器读不到新 checkpoint 的 `rms_norm_eps` 字段；待后续用兼容的 vLLM 版本或走 `trust_remote_code` 路径重跑 |
+
+### Qwen3-30B-A3B 分类明细
+
+（950 题验证集，`temperature=0 / top_p=1 / max_tokens=32768`，enable_thinking=True）
+
+| category | correct | total | weightage | accuracy | contribution |
+|---|---:|---:|---:|---:|---:|
+| unit_conversion | 159 | 159 | 16.7% | **100.0%** | 16.7% |
+| numeral | 158 | 158 | 16.6% | **100.0%** | 16.6% |
+| gravity | 159 | 160 | 16.8% | **99.4%** | 16.7% |
+| equation_numeric_deduce | 32 | 60 | 6.3% | 53.3% | 3.4% |
+| cipher | 67 | 157 | 16.5% | 42.7% | 7.1% |
+| bit_manipulation | 42 | 160 | 16.8% | 26.2% | 4.4% |
+| equation_numeric_guess | 1 | 14 | 1.5% | 7.1% | 0.1% |
+| cryptarithm_deduce | 2 | 66 | 6.9% | 3.0% | 0.2% |
+| cryptarithm_guess | 0 | 16 | 1.7% | 0.0% | 0.0% |
+| **TOTAL** | **620** | **950** | 100.0% | **65.3%** | 65.3% |
+
+简单观察：
+
+- **完全掌握的三类**（unit_conversion / numeral / gravity，接近满分）都是给出足够示例后能反推出唯一确定规则的题型。这三类合计占比 50.1%，是当前 baseline 分数的主要来源。
+- **中等表现**的 cipher / bit_manipulation / equation_numeric_deduce 需要模型识别较隐蔽的规则或字符级操作，模型偶尔能猜对但不稳定。
+- **几乎全错**的 cryptarithm_guess / cryptarithm_deduce / equation_numeric_guess 都涉及根据例子反推未知运算符或字符映射，是当前模型的明显短板；这也是后续 LoRA 微调最值得投入 CoT 数据的方向。
+- 950 题中 33 题 `finish_reason=length`（3.5%），说明极小部分题目 32K 生成不够；平均生成 12,879 tokens/题。
+
+完整 per-example 结果见 `results/prompting_baselines/qwen3-30b-a3b/qwen3-30b-a3b_validation.csv`；错题按 category 分文件放在 `qwen3-30b-a3b_mistakes/` 下。
+
 ## 候选模型选择
 
-比赛官方目标模型是 `NVIDIA Nemotron-3-Nano-30B-A3B`。从公开技术资料看，它不是普通 dense Transformer，而是 **Mixture-of-Experts hybrid Mamba-Transformer** 模型；`30B-A3B` 表示总参数约 30B 量级、每次推理激活约 3B 量级参数。
+本轮零样本 baseline 一共评估 3 个模型：
 
-因此，本分支选择 baseline 模型时优先考虑：
-
-1. MoE 或 sparse/MoE-like 模型。
-2. 总参数接近 20B-40B，或 active 参数接近 A3B。
-3. 支持长上下文和 reasoning/thinking 模式。
-4. 能通过 API、vLLM、Transformers 或 OpenAI-compatible server 稳定调用。
-
-### 第一优先级：结构和规模更接近的 MoE 模型
-
-| model | family/provider | structure | why test |
-|---|---|---|---|
-| Nemotron-3-Nano-30B-A3B | NVIDIA | MoE hybrid Mamba-Transformer | 官方 baseline/base model，必须作为核心参照 |
-| Qwen3-30B-A3B | Alibaba/Qwen | MoE, A3B | 与 Nemotron 的 30B-A3B 命名和激活规模最接近，是最重要的横向对比 |
-| Qwen3-30B-A3B-Thinking | Alibaba/Qwen | MoE, A3B, thinking | 适合测试 thinking mode 对逻辑推理题的增益 |
-| GPT-OSS-20B | OpenAI | MoE/open-weight | 总规模略小，但同属 sparse/MoE 路线，可作为近邻开源 baseline |
-| GLM-4.7-Flash | Z.ai/GLM | MoE, 30B-A3B if available | 如果可用，参数标注与 Nemotron/Qwen3 的 30B-A3B 非常接近，适合作为国内 MoE 对照 |
-| Mixtral-8x7B-Instruct | Mistral | MoE | 较早的开源 MoE，对照价值高，但架构和训练代际较旧 |
-| Llama-4-Scout | Meta | MoE | Llama 4 系列改用 MoE，可作为 Meta 阵营的高效 MoE 对照 |
-| Llama-4-Maverick | Meta | MoE | 更强的 Llama 4 MoE 版本，适合作为高性能参考组 |
-
-### 第二优先级：30B 附近 dense/open-weight 对照组
-
-这些模型不是 MoE，但参数规模接近，适合回答一个问题：**MoE 结构本身是否在本任务上带来优势，还是主要由模型训练和推理能力决定。**
-
-| model | family/provider | structure | why test |
-|---|---|---|---|
-| Qwen2.5-32B-Instruct | Alibaba/Qwen | dense Transformer | 30B 附近强 dense baseline |
-| Qwen3-32B | Alibaba/Qwen | dense Transformer | 与 Qwen3-30B-A3B 同家族，可比较 dense vs MoE |
-| DeepSeek-R1-Distill-Qwen-32B | DeepSeek/Qwen | dense distilled reasoning model | 推理能力强，适合验证 reasoning distillation 的效果 |
-| Gemma-3-27B-it | Google | dense Transformer | 规模接近，作为 Google 开源模型对照 |
-| Gemma-4-26B-A4B | Google | MoE, A4B | 如果可用，参数规模和 active 参数都接近 Nemotron-3-Nano-30B-A3B，是 Gemma 系列里更合适的结构对照 |
-| Gemma-4-E4B | Google | efficient/MoE-like | 更轻量，适合低成本 sanity check，但不应和 30B-A3B 直接等价比较 |
-| Mistral-Small-24B-Instruct | Mistral | dense Transformer | 24B 级别轻量 dense baseline |
-| Yi-1.5-34B-Chat | 01.AI | dense Transformer | 34B 级别中文/英文综合能力对照 |
-
-### GLM、Gemma、Llama 的选择建议
-
-如果专门考虑 GLM、Gemma、Llama 三条模型线，可以按下面优先级选择：
-
-| family | first choice | role | note |
-|---|---|---|---|
-| GLM | GLM-4.7-Flash | 近结构 MoE 对照 | 如果确认为 30B-A3B，则非常适合和 Nemotron-3-Nano-30B-A3B、Qwen3-30B-A3B 放在同一组 |
-| Gemma | Gemma-4-26B-A4B | 近规模 MoE 对照 | 比 Gemma-3-27B-it 更贴近 MoE/A3B-A4B 设定 |
-| Gemma | Gemma-3-27B-it | dense 对照 | 如果 Gemma 4 权重或推理服务不可用，可以先用它作为 Google dense baseline |
-| Llama | Llama-4-Scout | MoE 对照 | 更偏高效/长上下文，适合测试 Meta MoE 系列的 zero-shot 表现 |
-| Llama | Llama-4-Maverick | 强模型参考 | 若资源/API 可用，适合作为高性能对照；但规模和能力可能强于本项目目标模型 |
-
-不建议第一轮优先使用 Llama 3.x 70B 作为主对照，因为它是 dense 且规模显著更大；它可以作为“强 dense 上限参考”，但不适合作为 Nemotron-3-Nano-30B-A3B 的结构近邻。
-
-### 第三优先级：更大模型或闭源 API 参考组
-
-这些模型不一定结构或规模接近，但可以作为“当前主流 LLM zero-shot prompting 上限”的参考。
-
-| model | type | why test |
+| 模型 | 结构 | 说明 |
 |---|---|---|
-| DeepSeek-V3.2 | API / large MoE | 强 reasoning API baseline |
-| Claude-Sonnet / Claude-Opus | API | 闭源强推理模型参照 |
-| Gemini Pro | API | 长上下文和推理能力参照 |
-| Kimi-K / Moonshot | API | 中文环境和长上下文模型参照 |
-| GLM 系列 | API/open-weight depending on version | 国内主流模型参照 |
+| **Nemotron-3-Nano-30B-A3B** | MoE hybrid Mamba-Transformer, 30B / A3B | 官方指定的 base model，是所有实验的锚点。zero-shot 分数用来判断不做 LoRA 的下限。 |
+| Qwen3-30B-A3B | MoE Transformer, 30B / A3B | 与 Nemotron 结构最接近的对照：同为 30B 总参 / A3B 激活的 MoE，且 Qwen 系列在 reasoning benchmark 上一贯表现强；用来判断 baseline 差距主要来自架构还是训练数据 / 训练方式。 |
+| GLM-4.7-Flash | MoE hybrid attention (MLA + MoE), ~30B / A3B | Z.ai 家族的近邻 MoE 对照，规模接近但训练路线不同；用来判断在同规模下不同厂商在推理任务上的分布差异。 |
 
-### 推荐首批实验顺序
-
-为了避免一开始评估范围过大，建议先跑一个小而有解释力的组合：
-
-1. `Nemotron-3-Nano-30B-A3B`：官方目标模型，不加 LoRA。
-2. `Qwen3-30B-A3B`：最接近的 MoE/A3B 对照。
-3. `Qwen3-30B-A3B-Thinking`：测试 thinking mode。
-4. `GLM-4.7-Flash`：如果可用，作为另一组 30B-A3B MoE 对照。
-5. `Gemma-4-26B-A4B`：如果可用，作为 Gemma MoE/A4B 对照。
-6. `Qwen2.5-32B-Instruct` 或 `Qwen3-32B`：30B dense 对照。
-7. `DeepSeek-R1-Distill-Qwen-32B`：reasoning-distilled dense 对照。
-
-首批实验完成后，再扩展到更多 API 模型和更大模型。
+三个模型统一使用 32K max_tokens、`temperature=0 / top_p=1` 贪心解码，且都开启 thinking 模式（tokenizer 支持时）。参数完全一致，准确率差距只归因于模型本身。
 
 ## 代码结构与实现现状
 
@@ -256,15 +223,6 @@ models/                                     本地权重（gitignored, 不入库
 results/prompting_baselines/<model>/        每模型一子目录（gitignored, 不入库）
 ```
 
-### 各步落地状态
-
-1. **固定验证集**：DONE（`scripts/create_validation_split.py` 生成，`configs/eval/validation_ids_seed42_size950.csv` 入库）。
-2. **统一评估函数**：DONE（`src/evaluation/scoring.py::extract_final_answer / verify / score_predictions` 复刻自 `notebooks/evaluation/nvidia_nemotron_metric.ipynb`）。
-3. **统一模型调用接口**：PARTIAL——第一版只落地 `src/providers/local_vllm.py`（本地 vLLM）。当前不需要 `openai_compatible.py / transformers_local.py`，等真正接 API 或 HF 推理时再补，接口层 `src/providers/base.py` 已经预留。
-4. **prompting baseline runner**：DONE，拆成 `scripts/generate_baseline.py`（阶段 1）+ `scripts/evaluate_baseline.py`（阶段 2），产物结构与 `adapter_validation.ipynb` cell 24 对齐（`<model>_validation.csv / <model>_results.csv / <model>_mistakes/<cat>.csv`）。
-5. **多模型结果汇总**：DEFERRED——本轮不做独立 summarize 脚本；三个模型的 `<model>_results.csv` 里 TOTAL + per-category 已足够手工填进本文档 `## 目标结果格式` 表格。若模型数继续增长再考虑重新引入。
-6. **对比 LoRA 结果**：DEFERRED——等 LoRA adapter 训练完成后再做，本分支 baseline 即为对照组。
-
 ## 分支开发原则
 
 - 不在本分支提交模型权重、adapter、checkpoint 或大规模结果文件（`models/`、`results/` 均已 gitignore）。
@@ -283,16 +241,3 @@ enable_thinking: True   （tokenizer 不支持时会自动回退）
 prompt_suffix:
   Please put your final answer inside `\boxed{}`. For example: `\boxed{your answer}`
 ```
-
-## 当前 Runbook
-
-代码基础设施已就绪，接下来只需按顺序执行：
-
-1. **跑第一个 baseline（推荐 Nemotron 或 Qwen3）**：单模型全量 950 题，验证 vLLM 环境无异常、`finish_reason` 里 `length` 占比合理（说明 32k 生成够用）、`\boxed{}` 命中率不异常低。
-2. **看 mistakes**：翻 `results/prompting_baselines/<model>/<model>_mistakes/<category>.csv` 里若干条，确认错在推理本身而不是答案抽取失败。
-3. **跑剩下两个模型**：GLM-4.7-Flash 需要等权重下载完（曾经缺 `tokenizer_config.json / tokenizer.json`，运行前先 `ls models/GLM-4.7-Flash | grep tokenizer` 确认）。
-4. **一次性 evaluate 三个 run-dir**：拿到三张 `<model>_results.csv`。
-5. **手工填结果表进本文档 `## 目标结果格式`**：`model | think | max_tokens | score`，score 取 `_results.csv` 的 TOTAL 行 percentage。
-6. **Commit**：代码基础设施 + docs 里补的结果表；`results/` 已被 gitignore，不会误提。
-
-后续如果要扩展到 API 模型（DeepSeek / Claude / Gemini），只需新增 `src/providers/openai_compatible.py` 并在 `src/providers/base.py::build_provider` 里注册；`scripts/generate_baseline.py` 的 CLI 层可能需要加一个 `--provider` 开关，其它逻辑不动。
