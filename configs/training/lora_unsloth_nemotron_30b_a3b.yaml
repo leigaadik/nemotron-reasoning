@@ -55,6 +55,7 @@ lora:
     - lm_head
 
 training:
+  output_dir: outputs/lora_finetuning/nemotron_30b_a3b/sft_output
   num_train_epochs: 1
   per_device_train_batch_size: 1
   gradient_accumulation_steps: 8
