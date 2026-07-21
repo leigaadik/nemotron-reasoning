@@ -69,23 +69,21 @@ configs/eval/validation_ids_seed42_size950.csv (id, category)
 - **参数不做 per-model 定制**——config 化简后所有模型共享同一套 `max_tokens=32768 / temperature=0 / top_p=1`，若将来某模型确实需要小改，再重新引入 config 层。
 - **模型权重不入库**——`models/` 与 `results/` 都在 `.gitignore`；只有代码、脚本、docs 里手工填的结果表进 git。
 
-### 已知环境坑与解决办法
+### 环境兼容性说明
 
-运行 `scripts/generate_baseline.py` 前，先检查一下环境里的 `flash_attn` 是否与当前 torch 兼容。常见症状是引擎启动时抛：
+若引擎启动时报出如下 `ImportError`：
 
 ```
 ImportError: .../flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib
 ```
 
-原因：`flash_attn` 的预编译 `.so` 是针对旧版 libtorch ABI 编译的，跟当前 torch（本项目实测组合 `torch==2.11.0+cu128`）符号不匹配。
-
-解决办法：本项目不依赖 `flash_attn`，vLLM 会自动 fallback 到 FlashInfer / FlashAttention 内置实现。直接卸载即可：
+说明当前环境中的 `flash_attn` 预编译产物与 `torch` 的 C++ ABI 不匹配。本项目不依赖 `flash_attn`，vLLM 会自动回退到 FlashInfer 或内置 FlashAttention，卸载即可：
 
 ```bash
 pip uninstall -y flash_attn
 ```
 
-卸载后重跑 `scripts/generate_baseline.py`，模型能正常加载即为通过。类似的、由 pip 装到 site-packages 但 ABI 对不上 torch 的老组件（比如某些 `xformers` / 老版 `mamba_ssm`）也可以按同样方式处理——如果它们不是当前推理路径必需的，先卸载再重跑，比反复找版本组合快。
+其它已装但未被推理路径使用、且与当前 `torch` ABI 冲突的组件（如 `xformers`、旧版 `mamba_ssm` 等），可按同样方式处理。
 
 ### 一次完整运行
 
@@ -169,11 +167,11 @@ prompt + "\nPlease put your final answer inside `\\boxed{}`. For example: `\\box
 
 截至最近一次评估，3 个模型的完成情况如下：
 
-| 模型 | 状态 | Overall Accuracy | 备注 |
-|---|---|---:|---|
-| Qwen3-30B-A3B | 已完成 | **65.3%** (620 / 950) | 见下方分类明细 |
-| GLM-4.7-Flash | 进行中 | — | 因 vLLM MLA kernel 不兼容，需要 `VLLM_MLA_DISABLE=1` 绕开 |
-| Nemotron-3-Nano-30B-A3B | 已完成 | **59.6%** (566 / 950) | 见下方分类明细；30.8% 题目被 32K 上限截断，实际能力被低估 |
+| 模型 | 状态 | Overall Accuracy |
+|---|---|---:|
+| Qwen3-30B-A3B | 已完成 | **65.3%** (620 / 950) |
+| GLM-4.7-Flash | 进行中 | — |
+| Nemotron-3-Nano-30B-A3B | 已完成 | **59.6%** (566 / 950) |
 
 ### Qwen3-30B-A3B 分类明细
 
@@ -192,14 +190,7 @@ prompt + "\nPlease put your final answer inside `\\boxed{}`. For example: `\\box
 | cryptarithm_guess | 0 | 16 | 1.7% | 0.0% | 0.0% |
 | **TOTAL** | **620** | **950** | 100.0% | **65.3%** | 65.3% |
 
-简单观察：
-
-- **完全掌握的三类**（unit_conversion / numeral / gravity，接近满分）都是给出足够示例后能反推出唯一确定规则的题型。这三类合计占比 50.1%，是当前 baseline 分数的主要来源。
-- **中等表现**的 cipher / bit_manipulation / equation_numeric_deduce 需要模型识别较隐蔽的规则或字符级操作，模型偶尔能猜对但不稳定。
-- **几乎全错**的 cryptarithm_guess / cryptarithm_deduce / equation_numeric_guess 都涉及根据例子反推未知运算符或字符映射，是当前模型的明显短板；这也是后续 LoRA 微调最值得投入 CoT 数据的方向。
-- 950 题中 33 题 `finish_reason=length`（3.5%），说明极小部分题目 32K 生成不够；平均生成 12,879 tokens/题。
-
-完整 per-example 结果见 `results/prompting_baselines/qwen3-30b-a3b/qwen3-30b-a3b_validation.csv`；错题按 category 分文件放在 `qwen3-30b-a3b_mistakes/` 下。
+完整 per-example 结果见 `results/prompting_baselines/qwen3-30b-a3b/qwen3-30b-a3b_validation.csv`；错题按类别分文件保存在 `qwen3-30b-a3b_mistakes/` 目录下。950 题中 33 题（3.5%）因 `finish_reason=length` 被截断，平均生成 12,879 tokens。
 
 ### Nemotron-3-Nano-30B-A3B 分类明细
 
@@ -234,26 +225,20 @@ prompt + "\nPlease put your final answer inside `\\boxed{}`. For example: `\\box
 
 ### Qwen3 vs Nemotron 横向对比
 
-| 类别 | Qwen3 | Nemotron | Δ (Nemo − Qwen) |
-|---|---:|---:|---:|
-| numeral | 100.0% | 100.0% | 0 |
-| unit_conversion | 100.0% | 86.8% | −13.2 |
-| gravity | 99.4% | 74.4% | −25.0 |
-| cipher | 42.7% | 53.5% | **+10.8** |
-| bit_manipulation | 26.2% | 25.0% | −1.2 |
-| equation_numeric_deduce | 53.3% | 45.0% | −8.3 |
-| equation_numeric_guess | 7.1% | 0.0% | −7.1 |
-| cryptarithm_deduce | 3.0% | 0.0% | −3.0 |
-| cryptarithm_guess | 0.0% | 0.0% | 0 |
-| **TOTAL** | **65.3%** | **59.6%** | **−5.7** |
+| 类别 | Qwen3 | Nemotron |
+|---|---:|---:|
+| numeral | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 86.8% |
+| gravity | 99.4% | 74.4% |
+| cipher | 42.7% | 53.5% |
+| bit_manipulation | 26.2% | 25.0% |
+| equation_numeric_deduce | 53.3% | 45.0% |
+| equation_numeric_guess | 7.1% | 0.0% |
+| cryptarithm_deduce | 3.0% | 0.0% |
+| cryptarithm_guess | 0.0% | 0.0% |
+| **TOTAL** | **65.3%** | **59.6%** |
 
-观察：
-
-- Qwen3 领先 5.7 分，主要来自 gravity 和 unit_conversion 两类**数值计算**任务。这两类都 100% / 接近 100%，Nemotron 稍逊。
-- **Nemotron 在 cipher 上反超 +10.8 分**——加密解码这类符号推理任务，Nemotron 的 Mamba hybrid 结构对长序列 pattern 识别可能更有优势。
-- Nemotron 的"cryptarithm 全 0"和"equation_numeric_guess 0"很大程度上是因为被 32K 截断（97%-100% 的题都是 length finish），不能读作"模型完全不会做"。
-
-完整 per-example 结果见 `results/prompting_baselines/nemotron-3-nano-30b-a3b/nemotron-3-nano-30b-a3b_validation.csv`；错题按 category 分文件放在 `nemotron-3-nano-30b-a3b_mistakes/` 下。
+完整 per-example 结果见 `results/prompting_baselines/nemotron-3-nano-30b-a3b/nemotron-3-nano-30b-a3b_validation.csv`；错题按类别分文件保存在 `nemotron-3-nano-30b-a3b_mistakes/` 目录下。
 
 ## 候选模型选择
 
