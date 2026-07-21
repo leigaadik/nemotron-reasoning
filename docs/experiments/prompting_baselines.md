@@ -62,13 +62,6 @@ configs/eval/validation_ids_seed42_size950.csv (id, category)
 - 每条调用 `src/evaluation/scoring.py::verify`（01 串严格比 / 可 float 化的 1e-2 相对容忍 / 其余大小写不敏感字符串比）。
 - 输出格式与 `notebooks/evaluation/adapter_validation.ipynb` cell 24 **完全一致**，方便与 LoRA 阶段的产物直接对拍。
 
-### 关键设计选择
-
-- **验证集 ID 固定**（`configs/eval/validation_ids_seed42_size950.csv`, seed=42, size=950, 分层）——所有模型跑同一 950 题；不重跑验证集切分。
-- **每模型独立进程**——不在同一 Python 进程内切换 vLLM 实例，避免 GPU 内存/句柄泄漏。
-- **参数不做 per-model 定制**——config 化简后所有模型共享同一套 `max_tokens=32768 / temperature=0 / top_p=1`，若将来某模型确实需要小改，再重新引入 config 层。
-- **模型权重不入库**——`models/` 与 `results/` 都在 `.gitignore`；只有代码、脚本、docs 里手工填的结果表进 git。
-
 ### 环境兼容性说明
 
 若引擎启动时报出如下 `ImportError`：
