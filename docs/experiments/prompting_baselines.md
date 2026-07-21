@@ -158,13 +158,15 @@ prompt + "\nPlease put your final answer inside `\\boxed{}`. For example: `\\box
 
 ## 实验结果
 
-截至最近一次评估，3 个模型的完成情况如下：
+截至最近一次评估，模型的完成情况如下：
 
 | 模型 | 状态 | Overall Accuracy |
 |---|---|---:|
 | Qwen3-30B-A3B | 已完成 | **65.3%** (620 / 950) |
-| GLM-4.7-Flash | 进行中 | — |
 | Nemotron-3-Nano-30B-A3B | 已完成 | **59.6%** (566 / 950) |
+| Kimi-Linear-48B-A3B-Instruct | 进行中 | — |
+| Kimi-Linear-48B-A3B-Base | 已完成 | **33.5%** (318 / 950) |
+| GLM-4.7-Flash | 未开始 | — |
 
 ### Qwen3-30B-A3B 分类明细
 
@@ -215,6 +217,27 @@ prompt + "\nPlease put your final answer inside `\\boxed{}`. For example: `\\box
 | unit_conversion | 28/159 (17.6%) |
 
 平均生成 13,225 tokens/题（Qwen3 是 12,879），但 Nemotron 有更多题接近或打满 32K 上限。**cryptarithm 系列的 0% 主要是被截断，不能直接归因为"模型能力差"**——如果给 Nemotron 更长的 `max_tokens`（如 64K 或 128K），准确率有望明显提升，是可能的 follow-up 实验方向。
+
+### Kimi-Linear-48B-A3B-Base 分类明细
+
+（950 题验证集，`temperature=0 / top_p=1 / max_tokens=37760`，无 chat template SFT。max_model_len 使用 37760 而非 32768，是为满足 Kimi hybrid attention 的 page-size 约束——Kimi 要求 max_model_len 必须同时是 1888 与 128 的倍数，最小合适值是 7552 × 5 = 37760。）
+
+| category | correct | total | weightage | accuracy | contribution |
+|---|---:|---:|---:|---:|---:|
+| numeral | 120 | 158 | 16.6% | **75.9%** | 12.6% |
+| gravity | 121 | 160 | 16.8% | **75.6%** | 12.7% |
+| unit_conversion | 57 | 159 | 16.7% | 35.8% | 6.0% |
+| equation_numeric_deduce | 9 | 60 | 6.3% | 15.0% | 0.9% |
+| bit_manipulation | 11 | 160 | 16.8% | 6.9% | 1.2% |
+| cipher | 0 | 157 | 16.5% | 0.0% | 0.0% |
+| cryptarithm_deduce | 0 | 66 | 6.9% | 0.0% | 0.0% |
+| cryptarithm_guess | 0 | 16 | 1.7% | 0.0% | 0.0% |
+| equation_numeric_guess | 0 | 14 | 1.5% | 0.0% | 0.0% |
+| **TOTAL** | **318** | **950** | 100.0% | **33.5%** | 33.5% |
+
+**说明**：Base 版本未经过 instruction tuning，虽然能续写 Markdown 数学题解（`gravity` / `numeral` 上完整推导并输出 `\boxed{}` 格式），但对需要多步试错或规则演绎的类型（`cipher` / `cryptarithm_*` / `equation_numeric_guess`）几乎全错，共 253 题为 0 分。平均生成长度约 200 tokens（Instruct 通常 12,000+ tokens），推理耗时也显著更短，950 题约 5 分钟跑完（对比 Instruct 的 4-5 小时）。
+
+完整 per-example 结果见 `results/prompting_baselines/kimi-linear-48b-a3b-base/kimi-linear-48b-a3b-base_validation.csv`；错题按类别分文件保存在 `kimi-linear-48b-a3b-base_mistakes/` 目录下。
 
 ### Qwen3 vs Nemotron 横向对比
 
