@@ -166,7 +166,7 @@ def main() -> None:
     # back to per-model configs later without touching the provider.
     provider_cfg = {
         'name': model_name,
-        'model_path': str(model_path),
+        'model_path': args.model_path,
         'provider': 'local_vllm',
         'chat': CHAT_KWARGS,
         'prompt_suffix': PROMPT_SUFFIX,
@@ -176,9 +176,9 @@ def main() -> None:
 
     run_meta = {
         'model': model_name,
-        'model_path': str(model_path),
-        'train_csv': str(train_csv),
-        'validation_ids': str(ids_csv),
+        'model_path': args.model_path,
+        'train_csv': args.train,
+        'validation_ids': args.validation_ids,
         'num_examples': len(examples),
         'timestamp_utc': datetime.now(timezone.utc).isoformat(),
         'git_commit': git_commit(REPO_ROOT),
