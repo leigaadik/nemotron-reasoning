@@ -21,6 +21,28 @@ from src.training.stratified_sampler import build_stratified_index_order  # noqa
 
 DEFAULT_CONFIG = "configs/training/lora_unsloth_nemotron_30b_a3b.yaml"
 
+# ==================== 动态修复 Unsloth 参数转发 Bug ====================
+import transformers
+
+# 备份原始的 from_pretrained 类方法底层函数
+original_from_pretrained = transformers.AutoModelForCausalLM.from_pretrained.__func__
+
+@classmethod
+def patched_from_pretrained(cls, *args, **kwargs):
+    # 拦截并安全剔除无法被 Hugging Face 模型构造函数识别的 Unsloth 专属参数
+    unwanted_keys = [
+        "unsloth_force_compile",
+        "load_in_fp8",
+        "unsloth_tiled_mlp",
+        "fast_inference"
+    ]
+    for key in unwanted_keys:
+        kwargs.pop(key, None)
+    return original_from_pretrained(cls, *args, **kwargs)
+
+# 动态替换
+transformers.AutoModelForCausalLM.from_pretrained = patched_from_pretrained
+# ======================================================================
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -140,8 +162,18 @@ def _build_trainer(config: dict[str, Any], data_result):
         attn_implementation=model_cfg["attn_implementation"],
         dtype=_dtype_from_config(model_cfg["dtype"]),
     )
-    if tokenizer.pad_token is None:
+    if tokenizer.eos_token == "<EOS_TOKEN>" or tokenizer.eos_token not in tokenizer.get_vocab():
+        for token in ["<|im_end|>", "<|endoftext|>"]:
+            if token in tokenizer.get_vocab():
+                tokenizer.eos_token = token
+                break
+    if tokenizer.pad_token is None or tokenizer.pad_token not in tokenizer.get_vocab():
         tokenizer.pad_token = tokenizer.eos_token
+    print(
+        f"[train_lora_unsloth] tokenizer eos_token={tokenizer.eos_token!r} "
+        f"pad_token={tokenizer.pad_token!r}",
+        flush=True,
+    )
     print("[train_lora_unsloth] model loaded with Unsloth.", flush=True)
 
     print("[train_lora_unsloth] creating LoRA wrapper.", flush=True)
@@ -156,11 +188,30 @@ def _build_trainer(config: dict[str, Any], data_result):
         random_state=int(experiment_cfg["seed"]),
     )
     model.print_trainable_parameters()
+    if tokenizer.eos_token == "<EOS_TOKEN>" or tokenizer.eos_token not in tokenizer.get_vocab():
+        for token in ["<|im_end|>", "<|endoftext|>"]:
+            if token in tokenizer.get_vocab():
+                tokenizer.eos_token = token
+                break
+    if tokenizer.pad_token is None or tokenizer.pad_token not in tokenizer.get_vocab():
+        tokenizer.pad_token = tokenizer.eos_token
+    original_convert_tokens_to_ids = tokenizer.convert_tokens_to_ids
 
+    def convert_tokens_to_ids_with_unsloth_tokens(token):
+        if token == "<EOS_TOKEN>":
+            return original_convert_tokens_to_ids(tokenizer.eos_token)
+        if token == "<PAD_TOKEN>":
+            return original_convert_tokens_to_ids(tokenizer.pad_token)
+        if isinstance(token, list):
+            return [convert_tokens_to_ids_with_unsloth_tokens(item) for item in token]
+        return original_convert_tokens_to_ids(token)
+
+    tokenizer.convert_tokens_to_ids = convert_tokens_to_ids_with_unsloth_tokens
     training_cfg["output_dir"] = str(resolve_repo_path(training_cfg["output_dir"]))
     training_cfg["seed"] = int(experiment_cfg["seed"])
+    training_cfg.pop("eos_token", None)
+    training_cfg.pop("pad_token", None)
     training_args = SFTConfig(**training_cfg)
-
     class PrecomputedOrderSampler(Sampler):
         def __init__(self, order):
             self.order = list(order)
@@ -173,6 +224,25 @@ def _build_trainer(config: dict[str, Any], data_result):
 
     class StratifiedSFTTrainer(SFTTrainer):
         def __init__(self, *args, stratified_order=None, **kwargs):
+            trainer_args = kwargs.get("args")
+            processing_class = kwargs.get("processing_class")
+            if trainer_args is not None and processing_class is not None:
+                eos_token = processing_class.eos_token
+                if eos_token == "<EOS_TOKEN>" or eos_token not in processing_class.get_vocab():
+                    eos_token = "<|im_end|>"
+                    processing_class.eos_token = eos_token
+                pad_token = processing_class.pad_token
+                if pad_token == "<PAD_TOKEN>" or pad_token not in processing_class.get_vocab():
+                    pad_token = "<|endoftext|>" if "<|endoftext|>" in processing_class.get_vocab() else eos_token
+                    processing_class.pad_token = pad_token
+                trainer_args.eos_token = eos_token
+                trainer_args.pad_token = pad_token
+                print(
+                    "[train_lora_unsloth] trainer init eos_token={!r} pad_token={!r}".format(
+                        trainer_args.eos_token, trainer_args.pad_token
+                    ),
+                    flush=True,
+                )
             super().__init__(*args, **kwargs)
             self.stratified_order = stratified_order
 

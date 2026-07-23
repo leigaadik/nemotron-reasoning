@@ -1,0 +1,89 @@
+# LoRA SFT config adapted from notebooks/unsloth_lora_training.ipynb.
+
+experiment:
+  name: lora_unsloth_qwen3_4b
+  description: Local LoRA SFT development config with Qwen3-4B
+  seed: 123
+
+paths:
+  train_csv: data/train_split_with_cot.csv
+  output_dir: outputs/lora_finetuning/qwen3_4b
+  adapter_dir: outputs/lora_finetuning/qwen3_4b/adapter
+  submission_zip: outputs/lora_finetuning/qwen3_4b/submission.zip
+
+model:
+  base_model_name: Qwen/Qwen3-4B
+  model_path: models/Qwen3-4B
+  max_seq_length: 4096
+  dtype: bfloat16
+  load_in_4bit: false
+  load_in_8bit: false
+  full_finetuning: false
+  trust_remote_code: true
+  unsloth_force_compile: false
+  attn_implementation: eager
+
+prompt:
+  suffix: "\nPlease put your final answer inside `\\boxed{}`. For example: `\\boxed{your answer}`"
+  enable_thinking: true
+  assistant_think_end_token: "</think>"
+
+data:
+  prompt_column: prompt
+  answer_column: answer
+  cot_column: generated_cot
+  type_column: type
+  min_cot_chars: 5
+  shuffle: true
+  stratify_by_type: true
+
+lora:
+  r: 16
+  alpha: 16
+  dropout: 0.0
+  bias: none
+  use_gradient_checkpointing: unsloth
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+training:
+  output_dir: outputs/lora_finetuning/qwen3_4b/sft_output
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  lr_scheduler_type: linear
+  warmup_steps: 0
+  max_length: 2048
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.0
+  max_grad_norm: 1000000000.0
+  logging_steps: 10
+  save_strategy: "no"
+  bf16: true
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  dataloader_num_workers: 2
+  dataset_num_proc: 1
+  remove_unused_columns: false
+  report_to: none
+  packing: false
+  use_liger_kernel: true
+
+packaging:
+  required_files:
+    - adapter_config.json
+    - adapter_model.safetensors
+  adapter_config_overrides:
+    base_model_name_or_path: Qwen/Qwen3-4B
+    inference_mode: true
+    lora_dropout: 0.0
