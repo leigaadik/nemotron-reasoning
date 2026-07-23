@@ -129,6 +129,111 @@ notebooks/
 
 这样做的好处是两个实验分支可以共享评估口径，但不会互相打断开发节奏。LoRA 分支新增训练相关目录和脚本即可，不需要重构 prompting 分支已有代码。
 
+
+## Qwen3-4B 本地 LoRA 调试配置
+
+为降低本地依赖和显存调试成本，本分支新增 Qwen3-4B LoRA 配置：
+
+```text
+configs/training/lora_unsloth_qwen3_4b.yaml
+```
+
+该配置用于在本地 `models/Qwen3-4B` 权重上验证 Unsloth + TRL 训练链路，主要差异如下：
+
+- 基座模型：`Qwen/Qwen3-4B`，本地路径 `models/Qwen3-4B`。
+- 最大上下文：模型加载 `max_seq_length=4096`，SFT 训练 `max_length=2048`。
+- LoRA 配置：`r=16`，`lora_alpha=16`，`lora_dropout=0.0`。
+- LoRA target modules：`q_proj`、`k_proj`、`v_proj`、`o_proj`、`gate_proj`、`up_proj`、`down_proj`。
+- 数据预处理：`dataset_num_proc=1`，避免 tokenizer 兼容补丁在多进程 `datasets.map` 中触发 pickle 问题。
+- 训练：`use_liger_kernel=true`，避开 TRL 0.24 对 `outputs.logits` 的额外 entropy 统计路径。
+
+启动命令建议显式指定本地模型离线加载和单进程 device map 绕过：
+
+```bash
+CUDA_VISIBLE_DEVICES=<gpu_id> \
+HF_HUB_OFFLINE=1 \
+TRANSFORMERS_OFFLINE=1 \
+ACCELERATE_BYPASS_DEVICE_MAP=true \
+python scripts/train_lora_unsloth.py \
+  --config configs/training/lora_unsloth_qwen3_4b.yaml
+```
+
+其中 `CUDA_VISIBLE_DEVICES` 应根据 `nvidia-smi` 选择空闲 GPU。
+
+## Python 依赖组合
+
+当前 Python 3.10 环境采用 CUDA 12.1 / PyTorch 2.5.1 路线，核心依赖记录在：
+
+```text
+requirements.txt
+```
+
+依赖文件由 `pipreqs --use-local` 基于源码 import 生成后，补充运行期必需包得到。核心版本包括：
+
+- `torch==2.5.1+cu121`
+- `transformers==4.57.3`
+- `trl==0.24.0`
+- `peft==0.19.1`
+- `datasets==3.6.0`
+- `accelerate==1.14.0`
+- `liger-kernel==0.8.1`
+- `unsloth==2026.7.4`
+- `unsloth-zoo==2026.7.4`
+
+不建议把完整 `pip freeze` 直接作为项目依赖文件。当前训练路径需要的是精简、可复现的训练依赖；推理侧 `vllm` 依赖与训练侧 CUDA / PyTorch 版本容易互相牵制，建议单独环境维护。
+
+## 兼容性问题与处理
+
+### Unsloth 参数透传
+
+当前 Unsloth 版本会向 Hugging Face `AutoModelForCausalLM.from_pretrained` 透传部分模型构造函数不接受的参数，例如：
+
+- `unsloth_force_compile`
+- `load_in_fp8`
+- `unsloth_tiled_mlp`
+- `fast_inference`
+
+训练入口在加载模型前临时过滤这些参数，避免 Qwen3 模型初始化时报 `unexpected keyword argument`。
+
+### Qwen tokenizer 特殊 token
+
+Unsloth / TRL 组合中可能出现占位 token：
+
+- `<EOS_TOKEN>`
+- `<PAD_TOKEN>`
+
+Qwen3 tokenizer 的真实终止符和 padding 相关 token 分别使用：
+
+- `eos_token`: `<|im_end|>`
+- `pad_token`: `<|endoftext|>`
+
+训练脚本会在模型加载和 LoRA 注入后修正 tokenizer，并在 TRL 初始化前把占位 token 映射到真实 token id，避免 TRL 的 token 校验失败。
+
+### TRL 0.24 logits entropy 路径
+
+TRL 0.24 的 `SFTTrainer.compute_loss` 会额外读取 `outputs.logits` 计算 entropy。Unsloth Qwen3 patch 下该字段可能不是常规 tensor。Qwen 配置启用 `use_liger_kernel=true`，让 TRL 跳过这条额外统计路径。
+
+### 本地模型加载
+
+Qwen 调试配置使用本地模型路径 `models/Qwen3-4B`。运行时建议设置：
+
+```bash
+HF_HUB_OFFLINE=1
+TRANSFORMERS_OFFLINE=1
+```
+
+这样可以避免 Hugging Face Hub 对 `adapter_config.json` 等文件进行联网探测。
+
+### Accelerate device map 检查
+
+Unsloth 加载模型时可能使用 `device_map=auto`。在单进程训练时，Accelerate 仍可能触发 device map 检查。运行时设置：
+
+```bash
+ACCELERATE_BYPASS_DEVICE_MAP=true
+```
+
+用于明确允许该单进程训练路径继续执行。
+
 ## 实验记录
 
 | 日期 | 模型 | 框架 | 数据 | 主要配置 | 验证分数 | 备注 |

@@ -27,3 +27,5 @@ checkpoint*/
 *.pth
 *.safetensors
 *.gguf
+env_snapshots/
+unsloth_compiled_cache/
