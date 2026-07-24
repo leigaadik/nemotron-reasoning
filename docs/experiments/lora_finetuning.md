@@ -234,6 +234,87 @@ ACCELERATE_BYPASS_DEVICE_MAP=true
 
 用于明确允许该单进程训练路径继续执行。
 
+## Adapter 评估流程
+
+训练完成后，用 vLLM 加载 base model 并挂上 LoRA adapter，在 `exp/prompting-baselines` 用过的固定 950 题验证集上打分。产物路径命名与目录布局与 baseline 结果保持一致，方便直接对拍。
+
+### 环境
+
+评估用的推理路径 `vllm` 与训练用的 `transformers` 版本冲突（`vllm 0.23.0` 需要 `transformers==5.14.1`，训练侧固定在 `transformers==4.57.3`），因此评估**单独维护一个 conda env**：
+
+```bash
+conda create -n nemotron-vllm python=3.10 -y \
+    --override-channels \
+    -c http://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main \
+    -c http://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+conda activate nemotron-vllm
+pip install "vllm==0.23.0" "transformers==5.14.1" pandas pyyaml
+```
+
+若 vLLM 报 `flash_attn` ABI 冲突，按 `docs/experiments/prompting_baselines.md` 里的"环境兼容性说明"卸载 `flash_attn`——vLLM 会自动回退到 FlashInfer / 内置 FlashAttention。
+
+### 两阶段流水线
+
+评估与 baseline 完全同构：先跑生成、再单独打分。
+
+```
+outputs/lora_finetuning/<name>/adapter/         # 训练产出，作为 --adapter 输入
+        |
+        |  scripts/evaluate_adapter.py
+        |    LLM(base, enable_lora=True, max_lora_rank=32)
+        |    generate(..., lora_request=LoRARequest(...))
+        v
+results/lora_finetuning/<name>/
+    <name>_raw_outputs.jsonl                    # 每题一行 raw 生成
+    <name>_run.yaml                             # base + adapter + 参数快照 + git commit
+        |
+        |  scripts/evaluate_baseline.py         # 与 baseline 共用
+        v
+    <name>_validation.csv                       # 每题 id/prompt/answer/output/category/predicted/correct
+    <name>_results.csv                          # 每类 + TOTAL: correct/total/weightage/percentage/contribution
+    <name>_mistakes/<cat>.csv                   # 每类错题
+```
+
+推理参数由 `scripts/evaluate_adapter.py` 顶部**硬编码**，与 `scripts/generate_baseline.py` 保持一致：
+
+```text
+temperature: 0.0
+top_p:       1.0
+max_tokens:  32768
+max_model_len: 32768
+enable_thinking: True
+prompt_suffix:
+  Please put your final answer inside `\boxed{}`. For example: `\boxed{your answer}`
+```
+
+这样 LoRA 与 baseline 之间的分数差**只来自 adapter 本身**，不来自采样或推理设置的差异。
+
+### 一次完整评估
+
+以刚训练好的 `outputs/lora_finetuning/qwen3_30b_a3b/adapter/` 为例：
+
+```bash
+conda activate nemotron-vllm
+
+# 阶段 1：生成（base + adapter，全部 950 题）
+CUDA_VISIBLE_DEVICES=<gpu_id> \
+python scripts/evaluate_adapter.py \
+    --model-name qwen3-30b-a3b-lora \
+    --base-model ./models/Qwen3-30B-A3B \
+    --adapter outputs/lora_finetuning/qwen3_30b_a3b/adapter \
+    --out results/lora_finetuning/qwen3-30b-a3b-lora
+
+# 阶段 2：打分（与 baseline 复用同一脚本）
+python scripts/evaluate_baseline.py \
+    --run-dir results/lora_finetuning/qwen3-30b-a3b-lora
+```
+
+之后可以把 `results/lora_finetuning/qwen3-30b-a3b-lora/qwen3-30b-a3b-lora_results.csv` 与 `results/prompting_baselines/qwen3-30b-a3b/qwen3-30b-a3b_results.csv` 按 category 逐行对比，看 LoRA 相对 65.3% zero-shot baseline 是提升还是回退。
+
+### 关于竞赛提交
+
+比赛评测环境规定 base model 必须是 `NVIDIA Nemotron-3-Nano-30B-A3B`，因此 `qwen3-30b-a3b-lora` adapter 只能用于**分支内的方法验证**，不能直接作为 `submission.zip` 内容。真正提交前需要在 `configs/training/lora_unsloth_nemotron_30b_a3b.yaml` 上跑一版 Nemotron LoRA，再走同样的评估流程确认收益。
+
 ## 实验记录
 
 | 日期 | 模型 | 框架 | 数据 | 主要配置 | 验证分数 | 备注 |
