@@ -1,0 +1,95 @@
+# LoRA SFT config for Qwen3-30B-A3B (local weights).
+# Adapted from lora_unsloth_nemotron_30b_a3b.yaml; the differences are:
+#   - model.base_model_name / model_path point to the local Qwen3 checkpoint
+#   - lora.target_modules replaced to match Qwen3MoE layer names
+#   - paths / packaging renamed to qwen3_30b_a3b
+# All other training hyperparameters are kept identical for a fair
+# comparison against the Nemotron baseline recipe.
+
+experiment:
+  name: lora_unsloth_qwen3_30b_a3b
+  description: LoRA SFT for Qwen3-30B-A3B on Nemotron Reasoning data
+  seed: 123
+
+paths:
+  train_csv: data/train_split_with_cot.csv
+  output_dir: outputs/lora_finetuning/qwen3_30b_a3b
+  adapter_dir: outputs/lora_finetuning/qwen3_30b_a3b/adapter
+  submission_zip: outputs/lora_finetuning/qwen3_30b_a3b/submission.zip
+
+model:
+  base_model_name: Qwen/Qwen3-30B-A3B
+  model_path: ./models/Qwen3-30B-A3B
+  max_seq_length: 8192
+  dtype: bfloat16
+  load_in_4bit: false
+  load_in_8bit: false
+  full_finetuning: false
+  trust_remote_code: true
+  unsloth_force_compile: false
+  attn_implementation: eager
+
+prompt:
+  suffix: "\nPlease put your final answer inside `\\boxed{}`. For example: `\\boxed{your answer}`"
+  enable_thinking: true
+  assistant_think_end_token: "</think>"
+
+data:
+  prompt_column: prompt
+  answer_column: answer
+  cot_column: generated_cot
+  type_column: type
+  min_cot_chars: 5
+  shuffle: true
+  stratify_by_type: true
+
+lora:
+  r: 32
+  alpha: 32
+  dropout: 0.0
+  bias: none
+  use_gradient_checkpointing: unsloth
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+training:
+  output_dir: outputs/lora_finetuning/qwen3_30b_a3b/sft_output
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  lr_scheduler_type: linear
+  warmup_steps: 0
+  max_length: 4096
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.0
+  max_grad_norm: 1000000000.0
+  logging_steps: 10
+  save_strategy: "no"
+  bf16: true
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  dataloader_num_workers: 2
+  dataset_num_proc: 1
+  remove_unused_columns: false
+  report_to: none
+  packing: false
+  use_liger_kernel: true
+
+packaging:
+  required_files:
+    - adapter_config.json
+    - adapter_model.safetensors
+  adapter_config_overrides:
+    base_model_name_or_path: Qwen/Qwen3-30B-A3B
+    inference_mode: true
+    lora_dropout: 0.0
