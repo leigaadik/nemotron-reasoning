@@ -1,199 +1,141 @@
 # LoRA 微调实验说明
 
-本文档记录 `exp/lora-finetuning` 分支的开发目标、实验流程和阶段性记录。本分支专注于复现并改进 NVIDIA Nemotron Reasoning Challenge 的 LoRA 微调方案。
+本文档说明 `exp/lora-finetuning` 分支中 LoRA 训练与评估的当前实现。当前训练主线使用 Qwen3-30B-A3B。
 
-## 分支目标
+## 实验目标
 
-本分支用于开发 LoRA 微调相关代码和实验资产，目标是在不提交完整模型权重的前提下，训练并产出符合竞赛要求的 LoRA adapter，提升模型在逻辑推理 benchmark 上的准确率。
+本分支用于训练 Qwen3-30B-A3B 的 LoRA adapter，并在固定验证集上评估训练效果。训练数据来自 Nemotron Reasoning Challenge 的原始题目和增强 CoT 数据。
 
-核心问题包括：
+## 数据
 
-- 选择合适的基座模型和训练框架。
-- 使用官方训练数据和清洗后的高质量数据构造训练样本。
-- 设计稳定的验证集切分和评估流程。
-- 训练 LoRA adapter 并和零样本 prompting baseline 对比。
-- 整理最终可提交的 `submission.zip`。
+当前使用的数据文件：
 
-## 数据说明
+- `data/train.csv`：原始训练集，包含 `id`、`prompt`、`answer` 字段。
+- `data/train_split_with_cot.csv`：LoRA SFT 训练数据，包含 `id`、`prompt`、`answer`、`type`、`generated_cot` 字段。
+- `configs/eval/validation_ids_seed42_size950.csv`：固定 950 题验证集。
 
-当前项目中的主要数据：
+SFT 样本由 `src/data/sft_dataset.py` 构造：
 
-- `data/train.csv`：竞赛官方原始训练集，包含 `id`、`prompt`、`answer` 字段。
-- `data/train_split_with_cot.csv`：基于原始数据清洗或增强得到的高质量训练数据，可用于 LoRA 微调实验。
+- user：原始 `prompt` 加 boxed answer 格式提示。
+- assistant：清洗后的 `generated_cot`、`</think>`、最终 `\boxed{answer}`。
 
-建议在训练前固定验证集划分，避免后续调参时评估结果不可比较。
-
-## 初始开发任务
-
-1. 梳理并迁移可复现的 Unsloth 训练 notebook。
-2. 将 notebook 中的关键训练逻辑整理为可维护脚本。
-3. 固定训练集和验证集划分。
-4. 实现 LoRA 训练配置，包括模型路径、LoRA rank、学习率、batch size、max sequence length 等。
-5. 接入验证脚本，评估 adapter 在保留验证集上的准确率。
-6. 保存实验结果，包括训练配置、日志、验证分数和 adapter 路径。
-
-## Notebook 参考方案
-
-当前参考 notebook 的核心 LoRA 方案如下：
-
-- 基座模型：`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`。
-- 训练框架：Unsloth `FastLanguageModel` + TRL `SFTTrainer` / `SFTConfig`。
-- 精度：`torch.bfloat16`，不使用 4bit / 8bit 量化加载。
-- 最大上下文：模型加载 `max_seq_length=8192`，SFT 训练 `max_length=4096`。
-- LoRA 配置：`r=32`，`lora_alpha=32`，`lora_dropout=0.0`，`bias="none"`。
-- LoRA target modules：`q_proj`、`k_proj`、`v_proj`、`o_proj`、`in_proj`、`out_proj`、`up_proj`、`down_proj`、`lm_head`。
-- 训练数据：读取包含 `prompt`、`answer`、`generated_cot`、`type` 的高质量 CoT 数据。
-- 样本格式：user 为原始 `prompt` 加 boxed answer 提示，assistant 为清洗后的 CoT 加最终 `\boxed{answer}`。
-- 训练参数：`num_train_epochs=1`，`per_device_train_batch_size=1`，`gradient_accumulation_steps=8`，`learning_rate=2e-4`，`bf16=True`，`packing=False`。
-- 采样策略：按题目 `type` 构造近似分层顺序，尽量让每个有效 batch 的题型分布更均衡。
-- 产物：保存 LoRA adapter，并将 `adapter_config.json` 和 `adapter_model.safetensors` 打包为 `submission.zip`。
-
-这个方案应先脚本化复现，再逐步替换 notebook 中的 Kaggle 固定路径和手写参数。
-
-## 配置管理
-
-训练超参数统一写入 YAML：
-
-```text
-configs/training/lora_unsloth_nemotron_30b_a3b.yaml
-```
-
-训练入口读取该 YAML，并在启动时打印解析后的配置路径和完整参数快照：
-
-```bash
-python scripts/train_lora_unsloth.py \
-  --config configs/training/lora_unsloth_nemotron_30b_a3b.yaml
-```
-
-训练日志开头会明确记录：
-
-- 实际读取的 YAML 绝对路径。
-- 基座模型和本地模型路径。
-- 数据路径。
-- LoRA 参数。
-- SFT 训练参数。
-- 输出目录、adapter 目录和 submission 路径。
-
-## 项目框架设计
-
-LoRA 分支建议采用“公共评估能力 + 独立训练能力”的结构。零样本 baseline 和 LoRA 微调都需要读取同一批验证题、使用同一套答案抽取和 scoring，因此这些部分应该兼容共享；训练、adapter 打包和训练配置则单独放在 LoRA 分支内。
-
-推荐结构：
+## 当前项目结构
 
 ```text
 configs/
   eval/
     validation_ids_seed42_size950.csv
   training/
-    lora_unsloth_nemotron_30b_a3b.yaml
+    lora_unsloth_qwen3_30b_a3b.yaml
 scripts/
   train_lora_unsloth.py
-  package_lora_submission.py
   evaluate_adapter.py
+  evaluate_baseline.py
 src/
   data/
     sft_dataset.py
   evaluation/
-    scoring.py
     categories.py
-  training/
-    lora_config.py
-    stratified_sampler.py
+    scoring.py
   prompting/
     dataset.py
-notebooks/
+  providers/
+    base.py
+    local_vllm.py
   training/
-    unsloth_lora_training.ipynb
-  evaluation/
-    adapter_validation.ipynb
-    nvidia_nemotron_metric.ipynb
+    config.py
+    stratified_sampler.py
 ```
 
-其中：
+各模块职责：
 
-- `src/evaluation/` 应和 `exp/prompting-baselines` 保持一致，用于保证 baseline 和 LoRA 分数可比。
-- `src/prompting/dataset.py` 可以继续负责固定验证集读取。
-- `src/data/sft_dataset.py` 负责把 `train_split_with_cot.csv` 转成 SFT messages。
-- `src/training/stratified_sampler.py` 从 notebook 中抽出分层 batch 顺序逻辑。
-- `scripts/train_lora_unsloth.py` 负责读取 YAML、构造数据、加载 Unsloth 模型、创建 LoRA、启动 TRL SFT 训练并保存 adapter。
-- `scripts/package_lora_submission.py` 只负责生成竞赛需要的 `submission.zip`。
-- `scripts/evaluate_adapter.py` 负责加载 base model + adapter，在固定验证集上生成回答并复用 `src/evaluation/scoring.py` 打分。
+- `scripts/train_lora_unsloth.py`：LoRA 训练入口，读取 YAML 配置，构造 SFT 数据，加载 Unsloth 模型，创建 LoRA adapter，并保存训练产物。
+- `scripts/evaluate_adapter.py`：使用 vLLM 加载 base model 与 LoRA adapter，生成验证集回答。
+- `scripts/evaluate_baseline.py`：读取生成结果并打分。
+- `src/data/sft_dataset.py`：将 `train_split_with_cot.csv` 转换为 TRL SFTTrainer 需要的 chat records。
+- `src/training/config.py`：加载训练 YAML，并解析仓库内相对路径。
+- `src/training/stratified_sampler.py`：按题目 `type` 构造近似分层训练顺序。
+- `src/evaluation/`：答案抽取、类别统计和评分逻辑。
+- `src/prompting/dataset.py`：读取固定验证集题目。
+- `src/providers/local_vllm.py`：本地 vLLM 推理封装，支持 LoRA adapter。
 
-## 与另一个实验分支的兼容关系
+## Qwen3-30B-A3B 训练配置
 
-不建议在 `exp/lora-finetuning` 上直接修改 `exp/prompting-baselines` 的项目结构。更合理的方式是：
-
-1. 保持 `exp/prompting-baselines` 的零样本推理代码稳定。
-2. 在 LoRA 分支中复用或迁移公共模块，比如 `src/evaluation/`、`src/prompting/dataset.py`、`configs/eval/validation_ids_seed42_size950.csv`。
-3. 如果公共模块确实需要调整，先在当前分支改好并验证，再合并到 `master`，最后让两个实验分支都从 `master` 同步。
-
-这样做的好处是两个实验分支可以共享评估口径，但不会互相打断开发节奏。LoRA 分支新增训练相关目录和脚本即可，不需要重构 prompting 分支已有代码。
-
-
-## Qwen3-4B 本地 LoRA 调试配置
-
-为降低本地依赖和显存调试成本，本分支新增 Qwen3-4B LoRA 配置：
+主配置文件：
 
 ```text
-configs/training/lora_unsloth_qwen3_4b.yaml
+configs/training/lora_unsloth_qwen3_30b_a3b.yaml
 ```
 
-该配置用于在本地 `models/Qwen3-4B` 权重上验证 Unsloth + TRL 训练链路，主要差异如下：
+核心配置：
 
-- 基座模型：`Qwen/Qwen3-4B`，本地路径 `models/Qwen3-4B`。
-- 最大上下文：模型加载 `max_seq_length=4096`，SFT 训练 `max_length=2048`。
-- LoRA 配置：`r=16`，`lora_alpha=16`，`lora_dropout=0.0`。
-- LoRA target modules：`q_proj`、`k_proj`、`v_proj`、`o_proj`、`gate_proj`、`up_proj`、`down_proj`。
-- 数据预处理：`dataset_num_proc=1`，避免 tokenizer 兼容补丁在多进程 `datasets.map` 中触发 pickle 问题。
-- 训练：`use_liger_kernel=true`，避开 TRL 0.24 对 `outputs.logits` 的额外 entropy 统计路径。
+- base model：`Qwen/Qwen3-30B-A3B`
+- 本地模型路径：`./models/Qwen3-30B-A3B`
+- 训练数据：`data/train_split_with_cot.csv`
+- 输出目录：`outputs/lora_finetuning/qwen3_30b_a3b`
+- adapter 目录：`outputs/lora_finetuning/qwen3_30b_a3b/adapter`
+- 模型加载长度：`max_seq_length=8192`
+- SFT 截断长度：`max_length=4096`
+- 精度：`bfloat16`
+- 量化加载：不使用 4bit / 8bit
+- LoRA rank：`r=32`
+- LoRA alpha：`lora_alpha=32`
+- LoRA dropout：`0.0`
+- LoRA target modules：`q_proj`、`k_proj`、`v_proj`、`o_proj`、`gate_proj`、`up_proj`、`down_proj`
+- epoch：`1`
+- batch size：`per_device_train_batch_size=1`
+- 梯度累积：`gradient_accumulation_steps=8`
+- 学习率：`2.0e-4`
+- packing：`false`
+- Liger kernel：`use_liger_kernel=true`
 
-启动命令建议显式指定本地模型离线加载和单进程 device map 绕过：
+## 启动训练
+
+以下命令在项目根目录执行：
 
 ```bash
-CUDA_VISIBLE_DEVICES=<gpu_id> \
+conda activate nemotron
+
 HF_HUB_OFFLINE=1 \
 TRANSFORMERS_OFFLINE=1 \
 ACCELERATE_BYPASS_DEVICE_MAP=true \
+PYTHONUNBUFFERED=1 \
 python scripts/train_lora_unsloth.py \
-  --config configs/training/lora_unsloth_qwen3_4b.yaml
+  --config configs/training/lora_unsloth_qwen3_30b_a3b.yaml
 ```
 
-其中 `CUDA_VISIBLE_DEVICES` 应根据 `nvidia-smi` 选择空闲 GPU。
+## Python 依赖
 
-## Python 依赖组合
-
-当前 Python 3.10 环境采用 CUDA 12.1 / PyTorch 2.5.1 路线，核心依赖记录在：
+训练环境使用 Python 3.10、CUDA 12.1、PyTorch 2.5.1。核心依赖记录在 `requirements.txt`：
 
 ```text
-requirements.txt
+accelerate==1.14.0
+bitsandbytes==0.49.2
+datasets==3.6.0
+liger-kernel==0.8.1
+pandas==2.3.3
+peft==0.19.1
+PyYAML==6.0.3
+torch==2.5.1+cu121
+transformers==4.57.3
+triton==3.1.0
+trl==0.24.0
+unsloth==2026.7.4
+unsloth-zoo==2026.7.4
 ```
-
-依赖文件由 `pipreqs --use-local` 基于源码 import 生成后，补充运行期必需包得到。核心版本包括：
-
-- `torch==2.5.1+cu121`
-- `transformers==4.57.3`
-- `trl==0.24.0`
-- `peft==0.19.1`
-- `datasets==3.6.0`
-- `accelerate==1.14.0`
-- `liger-kernel==0.8.1`
-- `unsloth==2026.7.4`
-- `unsloth-zoo==2026.7.4`
-
-不建议把完整 `pip freeze` 直接作为项目依赖文件。当前训练路径需要的是精简、可复现的训练依赖；推理侧 `vllm` 依赖与训练侧 CUDA / PyTorch 版本容易互相牵制，建议单独环境维护。
 
 ## 兼容性问题与处理
 
 ### Unsloth 参数透传
 
-当前 Unsloth 版本会向 Hugging Face `AutoModelForCausalLM.from_pretrained` 透传部分模型构造函数不接受的参数，例如：
+当前 Unsloth 版本可能向 Hugging Face `AutoModelForCausalLM.from_pretrained` 透传模型构造函数不接受的参数：
 
 - `unsloth_force_compile`
 - `load_in_fp8`
 - `unsloth_tiled_mlp`
 - `fast_inference`
 
-训练入口在加载模型前临时过滤这些参数，避免 Qwen3 模型初始化时报 `unexpected keyword argument`。
+训练脚本会在模型加载前过滤这些参数。
 
 ### Qwen tokenizer 特殊 token
 
@@ -202,132 +144,103 @@ Unsloth / TRL 组合中可能出现占位 token：
 - `<EOS_TOKEN>`
 - `<PAD_TOKEN>`
 
-Qwen3 tokenizer 的真实终止符和 padding 相关 token 分别使用：
-
-- `eos_token`: `<|im_end|>`
-- `pad_token`: `<|endoftext|>`
-
-训练脚本会在模型加载和 LoRA 注入后修正 tokenizer，并在 TRL 初始化前把占位 token 映射到真实 token id，避免 TRL 的 token 校验失败。
+训练脚本会将它们映射到 Qwen tokenizer 中可用的真实 token，避免 TRL 初始化和数据处理阶段的 token 校验失败。
 
 ### TRL 0.24 logits entropy 路径
 
-TRL 0.24 的 `SFTTrainer.compute_loss` 会额外读取 `outputs.logits` 计算 entropy。Unsloth Qwen3 patch 下该字段可能不是常规 tensor。Qwen 配置启用 `use_liger_kernel=true`，让 TRL 跳过这条额外统计路径。
+TRL 0.24 的 `SFTTrainer.compute_loss` 会读取 `outputs.logits` 计算 entropy。Qwen3 配置启用 `use_liger_kernel=true`，用于避开该路径下的兼容性问题。
+
+### torchao 与 torch 版本不兼容
+
+如果导入 `trl.SFTTrainer` 或 `transformers.AutoProcessor` 时出现：
+
+```text
+ImportError: cannot import name 'AutoProcessor' from 'transformers'
+RuntimeError: Failed to import trl.trainer.sft_trainer
+AttributeError: module 'torch' has no attribute 'int1'
+```
+
+通常是环境中额外安装的 `torchao` 版本与当前 `torch==2.5.1+cu121` 不兼容。当前训练链路不依赖 `torchao`，可以卸载：
+
+```bash
+pip uninstall -y torchao
+```
 
 ### 本地模型加载
 
-Qwen 调试配置使用本地模型路径 `models/Qwen3-4B`。运行时建议设置：
+Qwen3-30B-A3B 配置使用本地模型路径：
+
+```text
+./models/Qwen3-30B-A3B
+```
+
+训练时设置：
 
 ```bash
 HF_HUB_OFFLINE=1
 TRANSFORMERS_OFFLINE=1
 ```
 
-这样可以避免 Hugging Face Hub 对 `adapter_config.json` 等文件进行联网探测。
+用于避免 Hugging Face Hub 联网探测本地模型和 adapter 路径。
 
 ### Accelerate device map 检查
 
-Unsloth 加载模型时可能使用 `device_map=auto`。在单进程训练时，Accelerate 仍可能触发 device map 检查。运行时设置：
+Unsloth 加载模型时可能使用 `device_map=auto`。单进程训练时设置：
 
 ```bash
 ACCELERATE_BYPASS_DEVICE_MAP=true
 ```
 
-用于明确允许该单进程训练路径继续执行。
+用于绕过 Accelerate 对 device map 的训练限制检查。
 
 ## Adapter 评估流程
 
-训练完成后，用 vLLM 加载 base model 并挂上 LoRA adapter，在 `exp/prompting-baselines` 用过的固定 950 题验证集上打分。产物路径命名与目录布局与 baseline 结果保持一致，方便直接对拍。
+训练完成后，用 vLLM 加载 Qwen3-30B-A3B base model，并挂载训练得到的 LoRA adapter，在固定 950 题验证集上生成回答，再运行评分脚本打分。
 
-### 环境
-
-评估用的推理路径 `vllm` 与训练用的 `transformers` 版本冲突（`vllm 0.23.0` 需要 `transformers==5.14.1`，训练侧固定在 `transformers==4.57.3`），因此评估**单独维护一个 conda env**：
-
-```bash
-conda create -n nemotron-vllm python=3.10 -y \
-    --override-channels \
-    -c http://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main \
-    -c http://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
-conda activate nemotron-vllm
-pip install "vllm==0.23.0" "transformers==5.14.1" pandas pyyaml
-```
-
-若 vLLM 报 `flash_attn` ABI 冲突，按 `docs/experiments/prompting_baselines.md` 里的"环境兼容性说明"卸载 `flash_attn`——vLLM 会自动回退到 FlashInfer / 内置 FlashAttention。
-
-### 两阶段流水线
-
-评估与 baseline 完全同构：先跑生成、再单独打分。
-
-```
-outputs/lora_finetuning/<name>/adapter/         # 训练产出，作为 --adapter 输入
+```text
+outputs/lora_finetuning/qwen3_30b_a3b/adapter/
         |
         |  scripts/evaluate_adapter.py
-        |    LLM(base, enable_lora=True, max_lora_rank=32)
-        |    generate(..., lora_request=LoRARequest(...))
         v
-results/lora_finetuning/<name>/
-    <name>_raw_outputs.jsonl                    # 每题一行 raw 生成
-    <name>_run.yaml                             # base + adapter + 参数快照 + git commit
+results/lora_finetuning/qwen3-30b-a3b-lora/
+    qwen3-30b-a3b-lora_raw_outputs.jsonl
+    qwen3-30b-a3b-lora_run.yaml
         |
-        |  scripts/evaluate_baseline.py         # 与 baseline 共用
+        |  scripts/evaluate_baseline.py
         v
-    <name>_validation.csv                       # 每题 id/prompt/answer/output/category/predicted/correct
-    <name>_results.csv                          # 每类 + TOTAL: correct/total/weightage/percentage/contribution
-    <name>_mistakes/<cat>.csv                   # 每类错题
+    qwen3-30b-a3b-lora_validation.csv
+    qwen3-30b-a3b-lora_results.csv
+    qwen3-30b-a3b-lora_mistakes/
 ```
 
-推理参数由 `scripts/evaluate_adapter.py` 顶部**硬编码**，与 `scripts/generate_baseline.py` 保持一致：
+完整评估命令：
+
+以下命令在项目根目录执行：
+
+```bash
+python scripts/evaluate_adapter.py \
+  --model-name qwen3-30b-a3b-lora \
+  --base-model ./models/Qwen3-30B-A3B \
+  --adapter outputs/lora_finetuning/qwen3_30b_a3b/adapter \
+  --out results/lora_finetuning/qwen3-30b-a3b-lora
+
+python scripts/evaluate_baseline.py \
+  --run-dir results/lora_finetuning/qwen3-30b-a3b-lora
+```
+
+推理参数：
 
 ```text
 temperature: 0.0
-top_p:       1.0
-max_tokens:  32768
+top_p: 1.0
+max_tokens: 32768
 max_model_len: 32768
-enable_thinking: True
-prompt_suffix:
-  Please put your final answer inside `\boxed{}`. For example: `\boxed{your answer}`
+enable_thinking: true
+prompt_suffix: Please put your final answer inside `\boxed{}`. For example: `\boxed{your answer}`
 ```
-
-这样 LoRA 与 baseline 之间的分数差**只来自 adapter 本身**，不来自采样或推理设置的差异。
-
-### 一次完整评估
-
-以刚训练好的 `outputs/lora_finetuning/qwen3_30b_a3b/adapter/` 为例：
-
-```bash
-conda activate nemotron-vllm
-
-# 阶段 1：生成（base + adapter，全部 950 题）
-CUDA_VISIBLE_DEVICES=<gpu_id> \
-python scripts/evaluate_adapter.py \
-    --model-name qwen3-30b-a3b-lora \
-    --base-model ./models/Qwen3-30B-A3B \
-    --adapter outputs/lora_finetuning/qwen3_30b_a3b/adapter \
-    --out results/lora_finetuning/qwen3-30b-a3b-lora
-
-# 阶段 2：打分（与 baseline 复用同一脚本）
-python scripts/evaluate_baseline.py \
-    --run-dir results/lora_finetuning/qwen3-30b-a3b-lora
-```
-
-之后可以把 `results/lora_finetuning/qwen3-30b-a3b-lora/qwen3-30b-a3b-lora_results.csv` 与 `results/prompting_baselines/qwen3-30b-a3b/qwen3-30b-a3b_results.csv` 按 category 逐行对比，看 LoRA 相对 65.3% zero-shot baseline 是提升还是回退。
-
-### 关于竞赛提交
-
-比赛评测环境规定 base model 必须是 `NVIDIA Nemotron-3-Nano-30B-A3B`，因此 `qwen3-30b-a3b-lora` adapter 只能用于**分支内的方法验证**，不能直接作为 `submission.zip` 内容。真正提交前需要在 `configs/training/lora_unsloth_nemotron_30b_a3b.yaml` 上跑一版 Nemotron LoRA，再走同样的评估流程确认收益。
 
 ## 实验记录
 
 | 日期 | 模型 | 框架 | 数据 | 主要配置 | 验证分数 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
-| TBD | TBD | Unsloth / TRL | TBD | TBD | TBD | 初始实验 |
-
-## 与零样本 baseline 的关系
-
-`exp/prompting-baselines` 分支用于测试不同大模型在无微调、仅提示词引导下的推理能力。本分支的 LoRA 微调结果应和该 baseline 进行对比，判断微调是否带来稳定收益。
-
-评估时需要尽量保持：
-
-- 相同或可解释的验证集。
-- 相同的答案抽取规则。
-- 相同的 scoring 方法。
-- 清晰记录是否使用 CoT、是否限制输出长度、是否使用官方提示格式。
+| TBD | Qwen3-30B-A3B | Unsloth / TRL | train_split_with_cot.csv | r=32, max_length=4096, lr=2e-4 | TBD | TBD |

@@ -101,55 +101,27 @@ NVIDIA RTX PRO 6000 Blackwell Server Edition
 
 ## Quick Start
 
-克隆仓库：
-
 ```bash
 git clone git@github.com:leigaadik/nemotron-reasoning.git
 cd nemotron-reasoning
-```
 
-创建并激活 Conda 虚拟环境：
-
-```bash
-conda create -n nemotron python=3.10 -y \
-  --override-channels \
-  -c http://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main \
-  -c http://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+conda create -n nemotron python=3.10 -y
 conda activate nemotron
+python -m pip install -r requirements.txt
 ```
 
-检查 Python 版本：
+启动 Qwen3-30B-A3B LoRA 训练：
 
 ```bash
-python --version
+HF_HUB_OFFLINE=1 \
+TRANSFORMERS_OFFLINE=1 \
+ACCELERATE_BYPASS_DEVICE_MAP=true \
+PYTHONUNBUFFERED=1 \
+python scripts/train_lora_unsloth.py \
+  --config configs/training/lora_unsloth_qwen3_30b_a3b.yaml
 ```
 
-期望版本：
-
-```text
-Python 3.10.x
-```
-
-安装核心推理与训练依赖：
-
-```bash
-python -m pip install "vllm==0.23.0" "transformers==5.14.1"
-
-python -m pip install \
-  "trl==0.26.1" \
-  "peft==0.18.0" \
-  "datasets==3.5.0" \
-  "bitsandbytes==0.49.0" \
-  "unsloth==2024.9.post3" \
-  "unsloth-zoo==2024.11.4" \
-  "xformers==0.0.31"
-```
-
-如果环境中存在 `flash_attn`，但它与当前 PyTorch / CUDA ABI 不兼容，可以卸载：
-
-```bash
-python -m pip uninstall -y flash_attn flash-attn
-```
+更多训练、评估和兼容性说明见 `docs/experiments/lora_finetuning.md`。
 
 ## 项目思路
 
