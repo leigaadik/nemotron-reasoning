@@ -264,19 +264,16 @@ prompt_suffix: Please put your final answer inside `\boxed{}`. For example: `\bo
 
 对比 Qwen3-30B-A3B 零样本 baseline（65.3%，620/950），LoRA 净提升 **+4.4pp**：
 
-| category | baseline | LoRA | Δ |
-|---|---:|---:|---:|
-| cipher | 42.7% | 98.7% | **+56.0** |
-| gravity | 99.4% | 100.0% | +0.6 |
-| cryptarithm_deduce | 3.0% | 4.5% | +1.5 |
-| numeral | 100.0% | 100.0% | = |
-| unit_conversion | 100.0% | 100.0% | = |
-| cryptarithm_guess | 0.0% | 0.0% | = |
-| equation_numeric_guess | 7.1% | 7.1% | = |
-| equation_numeric_deduce | 53.3% | 35.0% | **-18.3** |
-| bit_manipulation | 26.2% | 3.1% | **-23.1** |
-| **TOTAL** | **65.3%** | **69.7%** | **+4.4** |
+| category | baseline | LoRA |
+|---|---:|---:|
+| cipher | 42.7% | 98.7% |
+| gravity | 99.4% | 100.0% |
+| cryptarithm_deduce | 3.0% | 4.5% |
+| numeral | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 100.0% |
+| cryptarithm_guess | 0.0% | 0.0% |
+| equation_numeric_guess | 7.1% | 7.1% |
+| equation_numeric_deduce | 53.3% | 35.0% |
+| bit_manipulation | 26.2% | 3.1% |
+| **TOTAL** | **65.3%** | **69.7%** |
 
-**关键发现**：净提升几乎全部来自 cipher（42.7%→98.7%，单类贡献 +9.2pp），但 bit_manipulation 与 equation_numeric_deduce 明显退化，两类合计丢 48 题。抽查 bit_manipulation 错题发现：LoRA 被 SFT 锁进一套固定 CoT 模板（逐位罗列 + Matching/Best 伪搜索），对 bit_manipulation 推不出规则，且 59%（94/160）产不出合法的 8 位二进制答案（位数错 / 空 boxed / 退化重复刷爆 token），属输出格式被训练带偏而非单纯答错。若这两类维持 baseline 正确率，总分可达 **74.7%（710/950）**，是当前最大的一块可回收收益。
-
-完整 per-example 结果见 results/lora_finetuning/qwen3-30b-a3b-lora/qwen3-30b-a3b-lora_validation.csv；错题按类别分文件保存在 qwen3-30b-a3b-lora_mistakes/ 目录下。

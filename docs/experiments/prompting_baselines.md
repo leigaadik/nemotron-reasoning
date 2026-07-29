@@ -163,6 +163,7 @@ prompt + "\nPlease put your final answer inside `\\boxed{}`. For example: `\\box
 | 模型 | 状态 | Overall Accuracy |
 |---|---|---:|
 | Qwen3-30B-A3B | 已完成 | **65.3%** (620 / 950) |
+| Qwen3-4B | 已完成 | **52.6%** (500 / 950) |
 | Nemotron-3-Nano-30B-A3B | 已完成 | **59.6%** (566 / 950) |
 | Kimi-Linear-48B-A3B-Instruct | 已完成 | **19.9%** (189 / 950) |
 | Kimi-Linear-48B-A3B-Base | 已完成 | **33.5%** (318 / 950) |
@@ -186,6 +187,26 @@ prompt + "\nPlease put your final answer inside `\\boxed{}`. For example: `\\box
 | **TOTAL** | **620** | **950** | 100.0% | **65.3%** | 65.3% |
 
 完整 per-example 结果见 `results/prompting_baselines/qwen3-30b-a3b/qwen3-30b-a3b_validation.csv`；错题按类别分文件保存在 `qwen3-30b-a3b_mistakes/` 目录下。950 题中 33 题（3.5%）因 `finish_reason=length` 被截断，平均生成 12,879 tokens。
+
+
+### Qwen3-4B 分类明细
+
+（950 题验证集，`temperature=0 / top_p=1 / max_tokens=32768`，enable_thinking=True；由 `exp/prompting-baselines` 分支框架生成，run commit=`a4ab091`。）
+
+| category | correct | total | weightage | accuracy | contribution |
+|---|---:|---:|---:|---:|---:|
+| gravity | 159 | 160 | 16.8% | **99.4%** | 16.7% |
+| unit_conversion | 151 | 159 | 16.7% | **95.0%** | 15.9% |
+| numeral | 131 | 158 | 16.6% | **82.9%** | 13.8% |
+| equation_numeric_deduce | 25 | 60 | 6.3% | 41.7% | 2.6% |
+| bit_manipulation | 26 | 160 | 16.8% | 16.2% | 2.7% |
+| equation_numeric_guess | 1 | 14 | 1.5% | 7.1% | 0.1% |
+| cipher | 7 | 157 | 16.5% | 4.5% | 0.7% |
+| cryptarithm_deduce | 0 | 66 | 6.9% | 0.0% | 0.0% |
+| cryptarithm_guess | 0 | 16 | 1.7% | 0.0% | 0.0% |
+| **TOTAL** | **500** | **950** | 100.0% | **52.6%** | 52.6% |
+
+完整 per-example 结果见 `results/prompting_baselines/qwen3-4b-zeroshot/qwen3-4b-zeroshot_validation.csv`；错题按类别分文件保存在 `qwen3-4b-zeroshot_mistakes/` 目录下。
 
 ### Nemotron-3-Nano-30B-A3B 分类明细
 
