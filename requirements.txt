@@ -5,7 +5,7 @@ liger-kernel==0.8.1
 pandas==2.3.3
 peft==0.19.1
 PyYAML==6.0.3
-torch==2.5.1+cu121
+torch==2.5.1
 transformers==4.57.3
 triton==3.1.0
 trl==0.24.0
