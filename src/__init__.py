@@ -1,1 +1,1 @@
-"""Nemotron reasoning experiment utilities."""
+"""Project package for Nemotron reasoning experiments."""

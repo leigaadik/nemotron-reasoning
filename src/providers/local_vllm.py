@@ -1,14 +1,19 @@
-"""Local vLLM provider for prompting baseline runs.
+"""Local vLLM provider for prompting baseline and LoRA adapter runs.
 
 Mirrors the vLLM setup in
-`notebooks/evaluation/adapter_validation.ipynb` (cells 8/13/16), minus the
-LoRA request, since baseline runs deliberately evaluate the base model.
+`notebooks/evaluation/adapter_validation.ipynb` (cells 8/13/16). Baseline
+runs load the base model only; LoRA adapter runs additionally attach an
+adapter via vLLM's `LoRARequest`, matching how the official evaluator
+combines base + adapter at inference time.
 
 Key behaviours:
 - The chat template is applied via the tokenizer, with `enable_thinking`
   passed through when the model config asks for it. If the template does
   not accept that kwarg, we retry without it so templates like GLM-4.6
   (which uses a different flag or none at all) still work.
+- If `cfg['adapter_path']` is set, vLLM is started with `enable_lora=True`
+  and every generate call carries a `LoRARequest`. Otherwise the base
+  model is used verbatim — baseline behaviour is unchanged.
 - One vLLM instance per process. `close()` releases GPU memory so shell
   loops that iterate over configs stay clean.
 """
@@ -25,6 +30,10 @@ class LocalVLLMProvider:
     def __init__(self, cfg: dict[str, Any]):
         self.cfg = cfg
         self._llm = None  # lazy init to keep import cost off the CLI
+        self._lora_request = None
+        # Optional LoRA adapter directory (peft-format `adapter_config.json`
+        # + `adapter_model.safetensors`). None -> base model only.
+        self._adapter_path = cfg.get('adapter_path')
 
     def _lazy_init(self) -> None:
         if self._llm is not None:
@@ -33,8 +42,26 @@ class LocalVLLMProvider:
         from vllm import LLM
 
         vllm_kwargs = dict(self.cfg.get('vllm', {}))
+        if self._adapter_path:
+            # enable_lora + max_lora_rank must be set at engine start; the
+            # per-request LoRARequest cannot override them later. 32 matches
+            # the competition ceiling (max_lora_rank=32) and every adapter
+            # we ship stays at or below that.
+            vllm_kwargs.setdefault('enable_lora', True)
+            vllm_kwargs.setdefault('max_lora_rank', 32)
         self._llm = LLM(model=self.cfg['model_path'], **vllm_kwargs)
         self._tokenizer = self._llm.get_tokenizer()
+
+        if self._adapter_path:
+            from vllm.lora.request import LoRARequest
+
+            # lora_name is a human label; lora_int_id must be a positive
+            # int unique within this engine — we only ever load one.
+            self._lora_request = LoRARequest(
+                lora_name='adapter',
+                lora_int_id=1,
+                lora_path=self._adapter_path,
+            )
 
     def generate(
         self, examples: list[Example], prompt_suffix: str
@@ -82,7 +109,10 @@ class LocalVLLMProvider:
             prompts.append(prompt_text)
 
         sampling_params = SamplingParams(**self.cfg.get('sampling', {}))
-        outputs = self._llm.generate(prompts, sampling_params=sampling_params)
+        generate_kwargs: dict[str, Any] = {'sampling_params': sampling_params}
+        if self._lora_request is not None:
+            generate_kwargs['lora_request'] = self._lora_request
+        outputs = self._llm.generate(prompts, **generate_kwargs)
 
         results: list[GenerationResult] = []
         for ex, prompt_text, output in zip(examples, prompts, outputs):

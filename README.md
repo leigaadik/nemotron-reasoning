@@ -97,39 +97,31 @@ max_model_len: 8192
 NVIDIA RTX PRO 6000 Blackwell Server Edition
 ```
 
-该环境适合 Nemotron 模型的轻量微调和高吞吐推理。对于本项目而言，可以把本地和云端硬件分工理解为：
-
-- 本地 RTX A6000：适合数据处理、训练脚本调试、小规模 LoRA/QLoRA 实验。
-- 官方 G4 / RTX PRO 6000 Blackwell：更接近比赛推荐环境，适合正式复现和提交前验证。
-- H200 / B200：如果可用，适合更大 batch、更长上下文和更多超参数 sweep。
+提交的 LoRA adapter 需要能在官方评测环境中由 vLLM 加载。训练和验证时应尽量对齐官方评测参数，特别是 `max_lora_rank=32`、`max_model_len=8192`、`max_tokens=7680`、`temperature=0.0` 和 `top_p=1.0`。
 
 ## Quick Start
-
-克隆仓库：
 
 ```bash
 git clone git@github.com:leigaadik/nemotron-reasoning.git
 cd nemotron-reasoning
-```
 
-创建并激活 Conda 虚拟环境：
-
-```bash
-conda create -n nemotron python=3.12 -y
+conda create -n nemotron python=3.10 -y
 conda activate nemotron
+python -m pip install -r requirements.txt
 ```
 
-检查 Python 版本：
+启动 Qwen3-30B-A3B LoRA 训练：
 
 ```bash
-python --version
+HF_HUB_OFFLINE=1 \
+TRANSFORMERS_OFFLINE=1 \
+ACCELERATE_BYPASS_DEVICE_MAP=true \
+PYTHONUNBUFFERED=1 \
+python scripts/train_lora_unsloth.py \
+  --config configs/training/lora_unsloth_qwen3_30b_a3b.yaml
 ```
 
-期望版本：
-
-```text
-Python 3.12.x
-```
+更多训练、评估和兼容性说明见 `docs/experiments/lora_finetuning.md`。
 
 ## 项目思路
 
