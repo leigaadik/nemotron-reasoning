@@ -239,41 +239,82 @@ enable_thinking: true
 prompt_suffix: Please put your final answer inside `\boxed{}`. For example: `\boxed{your answer}`
 ```
 
-## 实验记录
+## 训练数据 CoT token 长度分布
 
-| 日期 | 模型 | 框架 | 数据 | 主要配置 | 验证分数 | 备注 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 2026-07-24 | Qwen3-30B-A3B | Unsloth / TRL | train_split_with_cot.csv | r=32, max_length=4096, lr=2e-4 | **69.7%** (662/950) | cipher 大幅提升；bit_manipulation / equation_numeric_deduce 明显退化，详见下方明细 |
+用 Qwen3-30B-A3B tokenizer 对 9500 条完整 SFT 序列（user prompt + CoT + `</think>` + `\boxed{}`，chat template 后）统计 token 长度：
 
-### Qwen3-30B-A3B LoRA 分类明细
+| 类别 | 条数 | 均值 | 中位数 | p90 | p95 | max | %>4096 | %>7680 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **总体** | 9500 | 3442 | 3028 | 6838 | 7184 | 7958 | 33.7% | 0.1% |
+| bit_manipulation | 1602 | 6943 | 6937 | 7451 | 7524 | 7958 | 100.0% | 0.8% |
+| equation_numeric_guess | 136 | 6134 | 6110 | 6487 | 6639 | 6847 | 100.0% | 0.0% |
+| equation_numeric_deduce | 596 | 5880 | 5818 | 6224 | 6322 | 6992 | 100.0% | 0.0% |
+| gravity | 1597 | 3699 | 3618 | 4864 | 5182 | 6294 | 32.4% | 0.0% |
+| cipher | 1576 | 3241 | 3110 | 4607 | 5130 | 7120 | 20.4% | 0.0% |
+| unit_conversion | 1594 | 2529 | 2466 | 3488 | 3769 | 4736 | 1.7% | 0.0% |
+| numeral | 1576 | 1048 | 1044 | 1088 | 1101 | 1138 | 0.0% | 0.0% |
+| cryptarithm_deduce | 659 | 660 | 652 | 763 | 768 | 779 | 0.0% | 0.0% |
+| cryptarithm_guess | 164 | 645 | 650 | 760 | 765 | 780 | 0.0% | 0.0% |
 
-（950 题验证集，`temperature=0 / top_p=1 / max_tokens=32768`，enable_thinking=True，base=Qwen3-30B-A3B 挂载 r=32 adapter。生成用 vLLM + LoRARequest，打分用 scripts/evaluate_baseline.py。）
+总体分布：
 
-| category | correct | total | weightage | accuracy | contribution |
-|---|---:|---:|---:|---:|---:|
-| gravity | 160 | 160 | 16.8% | **100.0%** | 16.8% |
-| numeral | 158 | 158 | 16.6% | **100.0%** | 16.6% |
-| unit_conversion | 159 | 159 | 16.7% | **100.0%** | 16.7% |
-| cipher | 155 | 157 | 16.5% | **98.7%** | 16.3% |
-| equation_numeric_deduce | 21 | 60 | 6.3% | 35.0% | 2.2% |
-| equation_numeric_guess | 1 | 14 | 1.5% | 7.1% | 0.1% |
-| cryptarithm_deduce | 3 | 66 | 6.9% | 4.5% | 0.3% |
-| bit_manipulation | 5 | 160 | 16.8% | 3.1% | 0.5% |
-| cryptarithm_guess | 0 | 16 | 1.7% | 0.0% | 0.0% |
-| **TOTAL** | **662** | **950** | 100.0% | **69.7%** | 69.7% |
+![SFT token length overall](figures/token_length_overall.png)
 
-对比 Qwen3-30B-A3B 零样本 baseline（65.3%，620/950），LoRA 净提升 **+4.4pp**：
+各类别分布（红线=4096，绿线=7680）：
 
-| category | baseline | LoRA |
+![SFT token length by category](figures/token_length_by_category.png)
+
+要点：bit_manipulation 的 CoT 最长（中位数 6937、max 7958），是决定 max_length 的卡点——4096 截掉其 100% 样本、7680 仅剩 0.8%；cryptarithm_deduce/guess 反而最短（约 650 tokens），任何 max_length 都不截断，其低分属能力/数据问题而非截断。
+
+## 实验记录：max_length 消融
+
+核心参数配置如下：
+
+| 参数 | 取值 |
+|---|---|
+| base model | Qwen/Qwen3-30B-A3B |
+| LoRA rank / alpha / dropout | 32 / 32 / 0.0 |
+| learning_rate | 2e-4 |
+| epochs | 1 |
+| batch_size × grad_accum | 1 × 8 |
+| 训练数据 | train_split_with_cot.csv（9500 条） |
+| **训练 max_length** | **4096 / 7680 / 8192** |
+| 评估 max_model_len | 8192 |
+| 评估 max_tokens | 7680 |
+| temperature / top_p | 0.0 / 1.0 |
+| enable_thinking | true |
+| 验证集 | 训练集抽样 950 题 |
+
+评估统一采用竞赛口径（base + adapter 经 vLLM 加载生成，与官方评测一致）。三组实验仅训练 `max_length` 取值不同，其余训练与推理配置完全一致。
+
+各类别准确率：
+
+| category | ml=4096 | ml=7680 | ml=8192 |
+|---|---:|---:|---:|
+| numeral | 100.0% | 100.0% | 100.0% |
+| gravity | 100.0% | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 100.0% | 100.0% |
+| cipher | 99.4% | 99.4% | 98.7% |
+| bit_manipulation | 0.0% | 81.9% | 80.0% |
+| equation_numeric_deduce | 13.3% | 90.0% | 88.3% |
+| equation_numeric_guess | 0.0% | 7.1% | 7.1% |
+| cryptarithm_deduce | 4.5% | 6.1% | 4.5% |
+| cryptarithm_guess | 0.0% | 0.0% | 0.0% |
+| **TOTAL** | **67.8% (644/950)** | **86.6% (823/950)** | **86.0% (817/950)** |
+
+### 微调前后对比
+
+微调前为 Qwen3-30B-A3B **零样本**，评估 `max_tokens=32768`；微调后为 **ml=7680** adapter，评估采用竞赛口径 `max_tokens=7680 / max_model_len=8192`。
+
+| category | 微调前（零样本，32768） | 微调后（ml=7680） |
 |---|---:|---:|
-| cipher | 42.7% | 98.7% |
-| gravity | 99.4% | 100.0% |
-| cryptarithm_deduce | 3.0% | 4.5% |
 | numeral | 100.0% | 100.0% |
 | unit_conversion | 100.0% | 100.0% |
-| cryptarithm_guess | 0.0% | 0.0% |
+| gravity | 99.4% | 100.0% |
+| cipher | 42.7% | 99.4% |
+| bit_manipulation | 26.2% | 81.9% |
+| equation_numeric_deduce | 53.3% | 90.0% |
 | equation_numeric_guess | 7.1% | 7.1% |
-| equation_numeric_deduce | 53.3% | 35.0% |
-| bit_manipulation | 26.2% | 3.1% |
-| **TOTAL** | **65.3%** | **69.7%** |
-
+| cryptarithm_deduce | 3.0% | 6.1% |
+| cryptarithm_guess | 0.0% | 0.0% |
+| **TOTAL** | **65.3% (620/950)** | **86.6% (823/950)** |

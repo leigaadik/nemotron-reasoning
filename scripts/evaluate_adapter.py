@@ -69,14 +69,14 @@ CHAT_KWARGS = {
 SAMPLING_PARAMS = {
     'temperature': 0.0,
     'top_p': 1.0,
-    'max_tokens': 32768,
+    'max_tokens': 7680,
 }
 
 VLLM_ENGINE_PARAMS = {
     'tensor_parallel_size': 1,
     'max_num_seqs': 32,
     'gpu_memory_utilization': 0.85,
-    'max_model_len': 32768,
+    'max_model_len': 8192,
     'dtype': 'auto',
     'trust_remote_code': True,
     'enable_prefix_caching': True,
