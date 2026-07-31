@@ -124,75 +124,6 @@ unsloth==2026.7.4
 unsloth-zoo==2026.7.4
 ```
 
-## 兼容性问题与处理
-
-### Unsloth 参数透传
-
-当前 Unsloth 版本可能向 Hugging Face `AutoModelForCausalLM.from_pretrained` 透传模型构造函数不接受的参数：
-
-- `unsloth_force_compile`
-- `load_in_fp8`
-- `unsloth_tiled_mlp`
-- `fast_inference`
-
-训练脚本会在模型加载前过滤这些参数。
-
-### Qwen tokenizer 特殊 token
-
-Unsloth / TRL 组合中可能出现占位 token：
-
-- `<EOS_TOKEN>`
-- `<PAD_TOKEN>`
-
-训练脚本会将它们映射到 Qwen tokenizer 中可用的真实 token，避免 TRL 初始化和数据处理阶段的 token 校验失败。
-
-### TRL 0.24 logits entropy 路径
-
-TRL 0.24 的 `SFTTrainer.compute_loss` 会读取 `outputs.logits` 计算 entropy。Qwen3 配置启用 `use_liger_kernel=true`，用于避开该路径下的兼容性问题。
-
-### torchao 与 torch 版本不兼容
-
-如果导入 `trl.SFTTrainer` 或 `transformers.AutoProcessor` 时出现：
-
-```text
-ImportError: cannot import name 'AutoProcessor' from 'transformers'
-RuntimeError: Failed to import trl.trainer.sft_trainer
-AttributeError: module 'torch' has no attribute 'int1'
-```
-
-通常是环境中额外安装的 `torchao` 版本与当前 `torch==2.5.1+cu121` 不兼容。当前训练链路不依赖 `torchao`，可以卸载：
-
-```bash
-pip uninstall -y torchao
-```
-
-### 本地模型加载
-
-Qwen3-30B-A3B 配置使用本地模型路径：
-
-```text
-./models/Qwen3-30B-A3B
-```
-
-训练时设置：
-
-```bash
-HF_HUB_OFFLINE=1
-TRANSFORMERS_OFFLINE=1
-```
-
-用于避免 Hugging Face Hub 联网探测本地模型和 adapter 路径。
-
-### Accelerate device map 检查
-
-Unsloth 加载模型时可能使用 `device_map=auto`。单进程训练时设置：
-
-```bash
-ACCELERATE_BYPASS_DEVICE_MAP=true
-```
-
-用于绕过 Accelerate 对 device map 的训练限制检查。
-
 ## Adapter 评估流程
 
 训练完成后，用 vLLM 加载 Qwen3-30B-A3B base model，并挂载训练得到的 LoRA adapter，在固定 950 题验证集上生成回答，再运行评分脚本打分。
@@ -266,6 +197,23 @@ prompt_suffix: Please put your final answer inside `\boxed{}`. For example: `\bo
 
 要点：bit_manipulation 的 CoT 最长（中位数 6937、max 7958），是决定 max_length 的卡点——4096 截掉其 100% 样本、7680 仅剩 0.8%；cryptarithm_deduce/guess 反而最短（约 650 tokens），任何 max_length 都不截断，其低分属能力/数据问题而非截断。
 
+## 微调前后对比
+
+微调前为 Qwen3-30B-A3B **零样本**，评估 `max_tokens=32768`；微调后为 **ml=7680** adapter，评估采用竞赛口径 `max_tokens=7680 / max_model_len=8192`。
+
+| category | 微调前（零样本，32768） | 微调后（ml=7680） |
+|---|---:|---:|
+| numeral | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 100.0% |
+| gravity | 99.4% | 100.0% |
+| cipher | 42.7% | 99.4% |
+| bit_manipulation | 26.2% | 81.9% |
+| equation_numeric_deduce | 53.3% | 90.0% |
+| equation_numeric_guess | 7.1% | 7.1% |
+| cryptarithm_deduce | 3.0% | 6.1% |
+| cryptarithm_guess | 0.0% | 0.0% |
+| **TOTAL** | **65.3% (620/950)** | **86.6% (823/950)** |
+
 ## 实验记录：max_length 消融
 
 核心参数配置如下：
@@ -302,19 +250,163 @@ prompt_suffix: Please put your final answer inside `\boxed{}`. For example: `\bo
 | cryptarithm_guess | 0.0% | 0.0% | 0.0% |
 | **TOTAL** | **67.8% (644/950)** | **86.6% (823/950)** | **86.0% (817/950)** |
 
-### 微调前后对比
+## 实验记录：batch size 消融（固定 max_length=7680）
 
-微调前为 Qwen3-30B-A3B **零样本**，评估 `max_tokens=32768`；微调后为 **ml=7680** adapter，评估采用竞赛口径 `max_tokens=7680 / max_model_len=8192`。
+固定 max_length=7680、lr=2e-4、max_grad_norm=1e9，其余同基础配置；唯一变量为**有效 batch**（per_device=1 × gradient_accumulation_steps）。评估统一竞赛口径（max_model_len=8192 / max_tokens=7680）。
 
-| category | 微调前（零样本，32768） | 微调后（ml=7680） |
-|---|---:|---:|
-| numeral | 100.0% | 100.0% |
-| unit_conversion | 100.0% | 100.0% |
-| gravity | 99.4% | 100.0% |
-| cipher | 42.7% | 99.4% |
-| bit_manipulation | 26.2% | 81.9% |
-| equation_numeric_deduce | 53.3% | 90.0% |
-| equation_numeric_guess | 7.1% | 7.1% |
-| cryptarithm_deduce | 3.0% | 6.1% |
-| cryptarithm_guess | 0.0% | 0.0% |
-| **TOTAL** | **65.3% (620/950)** | **86.6% (823/950)** |
+| category | eff_batch=16 | eff_batch=8 | eff_batch=4 |
+|---|---:|---:|---:|
+| numeral | 100.0% | 100.0% | 100.0% |
+| gravity | 100.0% | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 100.0% | 100.0% |
+| cipher | 100.0% | 98.7% | 99.4% |
+| bit_manipulation | 74.4% | 80.0% | 83.8% |
+| equation_numeric_deduce | 85.0% | 88.3% | 88.3% |
+| equation_numeric_guess | 0.0% | 7.1% | 7.1% |
+| cryptarithm_deduce | 6.1% | 6.1% | 7.6% |
+| cryptarithm_guess | 0.0% | 0.0% | 0.0% |
+| **TOTAL** | **85.1% (808/950)** | **86.1% (818/950)** | **86.9% (826/950)** |
+
+## 实验记录：learning rate 消融（固定 max_length=7680、eff_batch=8）
+
+固定 max_length=7680、eff_batch=8、max_grad_norm=1e9，其余同基础配置；唯一变量为 **learning_rate**，三档全部重新训练。评估统一竞赛口径（max_model_len=8192 / max_tokens=7680）。
+
+| category | lr=1e-4 | lr=2e-4 | lr=5e-4 |
+|---|---:|---:|---:|
+| numeral | 待补充 | 待补充 | 待补充 |
+| gravity | 待补充 | 待补充 | 待补充 |
+| unit_conversion | 待补充 | 待补充 | 待补充 |
+| cipher | 待补充 | 待补充 | 待补充 |
+| bit_manipulation | 待补充 | 待补充 | 待补充 |
+| equation_numeric_deduce | 待补充 | 待补充 | 待补充 |
+| equation_numeric_guess | 待补充 | 待补充 | 待补充 |
+| cryptarithm_deduce | 待补充 | 待补充 | 待补充 |
+| cryptarithm_guess | 待补充 | 待补充 | 待补充 |
+| **TOTAL** | 待补充 | 待补充 | 待补充 |
+
+## 实验记录：r / alpha 网格搜索（固定 max_length=7680、eff_batch=4、lr=2e-4）
+
+固定 max_length=7680、eff_batch=4、lr=2e-4，其余同基础配置；网格搜索 LoRA rank `r` 与 `alpha` ∈ {16, 32, 64}（共 9 组，scaling = alpha/r）。评估口径 max_model_len=8192 / max_tokens=7680；评估的 `max_lora_rank` 设为 64。
+
+TOTAL 准确率（行 = r，列 = alpha）：
+
+| r ＼ alpha | 16 | 32 | 64 |
+|---|---:|---:|---:|
+| **16** | 待补充 | 待补充 | 待补充 |
+| **32** | 待补充 | 待补充 | 待补充 |
+| **64** | 待补充 | 待补充 | 待补充 |
+
+
+### r=16 各类别明细
+
+| category | alpha=16 | alpha=32 | alpha=64 |
+|---|---:|---:|---:|
+| numeral | 待补充 | 待补充 | 待补充 |
+| gravity | 待补充 | 待补充 | 待补充 |
+| unit_conversion | 待补充 | 待补充 | 待补充 |
+| cipher | 待补充 | 待补充 | 待补充 |
+| bit_manipulation | 待补充 | 待补充 | 待补充 |
+| equation_numeric_deduce | 待补充 | 待补充 | 待补充 |
+| equation_numeric_guess | 待补充 | 待补充 | 待补充 |
+| cryptarithm_deduce | 待补充 | 待补充 | 待补充 |
+| cryptarithm_guess | 待补充 | 待补充 | 待补充 |
+| **TOTAL** | 待补充 | 待补充 | 待补充 |
+
+### r=32 各类别明细
+
+| category | alpha=16 | alpha=32 | alpha=64 |
+|---|---:|---:|---:|
+| numeral | 待补充 | 待补充 | 待补充 |
+| gravity | 待补充 | 待补充 | 待补充 |
+| unit_conversion | 待补充 | 待补充 | 待补充 |
+| cipher | 待补充 | 待补充 | 待补充 |
+| bit_manipulation | 待补充 | 待补充 | 待补充 |
+| equation_numeric_deduce | 待补充 | 待补充 | 待补充 |
+| equation_numeric_guess | 待补充 | 待补充 | 待补充 |
+| cryptarithm_deduce | 待补充 | 待补充 | 待补充 |
+| cryptarithm_guess | 待补充 | 待补充 | 待补充 |
+| **TOTAL** | 待补充 | 待补充 | 待补充 |
+
+### r=64 各类别明细
+
+| category | alpha=16 | alpha=32 | alpha=64 |
+|---|---:|---:|---:|
+| numeral | 待补充 | 待补充 | 待补充 |
+| gravity | 待补充 | 待补充 | 待补充 |
+| unit_conversion | 待补充 | 待补充 | 待补充 |
+| cipher | 待补充 | 待补充 | 待补充 |
+| bit_manipulation | 待补充 | 待补充 | 待补充 |
+| equation_numeric_deduce | 待补充 | 待补充 | 待补充 |
+| equation_numeric_guess | 待补充 | 待补充 | 待补充 |
+| cryptarithm_deduce | 待补充 | 待补充 | 待补充 |
+| cryptarithm_guess | 待补充 | 待补充 | 待补充 |
+| **TOTAL** | 待补充 | 待补充 | 待补充 |
+
+## 兼容性问题与处理
+
+### Unsloth 参数透传
+
+当前 Unsloth 版本可能向 Hugging Face `AutoModelForCausalLM.from_pretrained` 透传模型构造函数不接受的参数：
+
+- `unsloth_force_compile`
+- `load_in_fp8`
+- `unsloth_tiled_mlp`
+- `fast_inference`
+
+训练脚本会在模型加载前过滤这些参数。
+
+### Qwen tokenizer 特殊 token
+
+Unsloth / TRL 组合中可能出现占位 token：
+
+- `<EOS_TOKEN>`
+- `<PAD_TOKEN>`
+
+训练脚本会将它们映射到 Qwen tokenizer 中可用的真实 token，避免 TRL 初始化和数据处理阶段的 token 校验失败。
+
+### TRL 0.24 logits entropy 路径
+
+TRL 0.24 的 `SFTTrainer.compute_loss` 会读取 `outputs.logits` 计算 entropy。Qwen3 配置启用 `use_liger_kernel=true`，用于避开该路径下的兼容性问题。
+
+### torchao 与 torch 版本不兼容
+
+如果导入 `trl.SFTTrainer` 或 `transformers.AutoProcessor` 时出现：
+
+```text
+ImportError: cannot import name 'AutoProcessor' from 'transformers'
+RuntimeError: Failed to import trl.trainer.sft_trainer
+AttributeError: module 'torch' has no attribute 'int1'
+```
+
+通常是环境中额外安装的 `torchao` 版本与当前 `torch==2.5.1+cu121` 不兼容。当前训练链路不依赖 `torchao`，可以卸载：
+
+```bash
+pip uninstall -y torchao
+```
+
+### 本地模型加载
+
+Qwen3-30B-A3B 配置使用本地模型路径：
+
+```text
+./models/Qwen3-30B-A3B
+```
+
+训练时设置：
+
+```bash
+HF_HUB_OFFLINE=1
+TRANSFORMERS_OFFLINE=1
+```
+
+用于避免 Hugging Face Hub 联网探测本地模型和 adapter 路径。
+
+### Accelerate device map 检查
+
+Unsloth 加载模型时可能使用 `device_map=auto`。单进程训练时设置：
+
+```bash
+ACCELERATE_BYPASS_DEVICE_MAP=true
+```
+
+用于绕过 Accelerate 对 device map 的训练限制检查。
