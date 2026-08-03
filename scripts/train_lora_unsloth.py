@@ -19,7 +19,7 @@ from src.training.config import resolve_repo_path  # noqa: E402
 from src.training.stratified_sampler import build_stratified_index_order  # noqa: E402
 
 
-DEFAULT_CONFIG = "configs/training/lora_unsloth_nemotron_30b_a3b.yaml"
+DEFAULT_CONFIG = "configs/training/lora_unsloth_qwen3_30b_a3b.yaml"
 
 # ==================== 动态修复 Unsloth 参数转发 Bug ====================
 import transformers
