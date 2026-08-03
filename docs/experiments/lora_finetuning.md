@@ -216,6 +216,8 @@ prompt_suffix: Please put your final answer inside `\boxed{}`. For example: `\bo
 
 ## 实验记录：max_length 消融
 
+> 训练设备：**NVIDIA H200（单卡）**。
+
 核心参数配置如下：
 
 | 参数 | 取值 |
@@ -252,6 +254,8 @@ prompt_suffix: Please put your final answer inside `\boxed{}`. For example: `\bo
 
 ## 实验记录：batch size 消融（固定 max_length=7680）
 
+> 训练设备：**NVIDIA H200（单卡）**。
+
 固定 max_length=7680、lr=2e-4、max_grad_norm=1e9，其余同基础配置；唯一变量为**有效 batch**（per_device=1 × gradient_accumulation_steps）。评估统一竞赛口径（max_model_len=8192 / max_tokens=7680）。
 
 | category | eff_batch=16 | eff_batch=8 | eff_batch=4 |
@@ -269,22 +273,26 @@ prompt_suffix: Please put your final answer inside `\boxed{}`. For example: `\bo
 
 ## 实验记录：learning rate 消融（固定 max_length=7680、eff_batch=8）
 
-固定 max_length=7680、eff_batch=8、max_grad_norm=1e9，其余同基础配置；唯一变量为 **learning_rate**，三档全部重新训练。评估统一竞赛口径（max_model_len=8192 / max_tokens=7680）。
+> 训练设备：**NVIDIA B200（单卡）**。
+
+固定 max_length=7680、eff_batch=8、max_grad_norm=1e9，其余同基础配置；唯一变量为 **learning_rate**。评估统一竞赛口径（max_model_len=8192 / max_tokens=7680）。
 
 | category | lr=1e-4 | lr=2e-4 | lr=5e-4 |
 |---|---:|---:|---:|
-| numeral | 待补充 | 待补充 | 待补充 |
-| gravity | 待补充 | 待补充 | 待补充 |
-| unit_conversion | 待补充 | 待补充 | 待补充 |
-| cipher | 待补充 | 待补充 | 待补充 |
-| bit_manipulation | 待补充 | 待补充 | 待补充 |
-| equation_numeric_deduce | 待补充 | 待补充 | 待补充 |
-| equation_numeric_guess | 待补充 | 待补充 | 待补充 |
-| cryptarithm_deduce | 待补充 | 待补充 | 待补充 |
-| cryptarithm_guess | 待补充 | 待补充 | 待补充 |
-| **TOTAL** | 待补充 | 待补充 | 待补充 |
+| numeral | 100.0% | 100.0% | 100.0% |
+| gravity | 99.4% | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 100.0% | 100.0% |
+| cipher | 98.7% | 99.4% | 100.0% |
+| bit_manipulation | 77.5% | 80.6% | 80.6% |
+| equation_numeric_deduce | 86.7% | 86.7% | 91.7% |
+| equation_numeric_guess | 7.1% | 7.1% | 7.1% |
+| cryptarithm_deduce | 6.1% | 6.1% | 9.1% |
+| cryptarithm_guess | 0.0% | 0.0% | 0.0% |
+| **TOTAL** | **85.5% (812/950)** | **86.2% (819/950)** | **86.8% (825/950)** |
 
 ## 实验记录：r / alpha 网格搜索（固定 max_length=7680、eff_batch=4、lr=2e-4）
+
+> 训练设备：**NVIDIA H200（单卡）**。
 
 固定 max_length=7680、eff_batch=4、lr=2e-4，其余同基础配置；网格搜索 LoRA rank `r` 与 `alpha` ∈ {16, 32, 64}（共 9 组，scaling = alpha/r）。评估口径 max_model_len=8192 / max_tokens=7680；评估的 `max_lora_rank` 设为 64。
 
@@ -292,55 +300,55 @@ TOTAL 准确率（行 = r，列 = alpha）：
 
 | r ＼ alpha | 16 | 32 | 64 |
 |---|---:|---:|---:|
-| **16** | 待补充 | 待补充 | 待补充 |
-| **32** | 待补充 | 待补充 | 待补充 |
-| **64** | 待补充 | 待补充 | 待补充 |
+| **16** | 86.5% | **87.1%** | 86.9% |
+| **32** | 86.3% | 86.9% | **87.1%** |
+| **64** | 86.3% | 86.1% | **86.6%** |
 
 
 ### r=16 各类别明细
 
 | category | alpha=16 | alpha=32 | alpha=64 |
 |---|---:|---:|---:|
-| numeral | 待补充 | 待补充 | 待补充 |
-| gravity | 待补充 | 待补充 | 待补充 |
-| unit_conversion | 待补充 | 待补充 | 待补充 |
-| cipher | 待补充 | 待补充 | 待补充 |
-| bit_manipulation | 待补充 | 待补充 | 待补充 |
-| equation_numeric_deduce | 待补充 | 待补充 | 待补充 |
-| equation_numeric_guess | 待补充 | 待补充 | 待补充 |
-| cryptarithm_deduce | 待补充 | 待补充 | 待补充 |
-| cryptarithm_guess | 待补充 | 待补充 | 待补充 |
-| **TOTAL** | 待补充 | 待补充 | 待补充 |
+| numeral | 100.0% | 100.0% | 100.0% |
+| gravity | 100.0% | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 100.0% | 100.0% |
+| cipher | 100.0% | 100.0% | 100.0% |
+| bit_manipulation | 81.9% | 83.1% | 83.8% |
+| equation_numeric_deduce | 88.3% | 88.3% | 86.7% |
+| equation_numeric_guess | 7.1% | 14.3% | 7.1% |
+| cryptarithm_deduce | 4.5% | 7.6% | 7.6% |
+| cryptarithm_guess | 0.0% | 0.0% | 0.0% |
+| **TOTAL** | **86.5% (822/950)** | **87.1% (827/950)** | **86.9% (826/950)** |
 
 ### r=32 各类别明细
 
 | category | alpha=16 | alpha=32 | alpha=64 |
 |---|---:|---:|---:|
-| numeral | 待补充 | 待补充 | 待补充 |
-| gravity | 待补充 | 待补充 | 待补充 |
-| unit_conversion | 待补充 | 待补充 | 待补充 |
-| cipher | 待补充 | 待补充 | 待补充 |
-| bit_manipulation | 待补充 | 待补充 | 待补充 |
-| equation_numeric_deduce | 待补充 | 待补充 | 待补充 |
-| equation_numeric_guess | 待补充 | 待补充 | 待补充 |
-| cryptarithm_deduce | 待补充 | 待补充 | 待补充 |
-| cryptarithm_guess | 待补充 | 待补充 | 待补充 |
-| **TOTAL** | 待补充 | 待补充 | 待补充 |
+| numeral | 100.0% | 100.0% | 100.0% |
+| gravity | 100.0% | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 100.0% | 100.0% |
+| cipher | 99.4% | 99.4% | 100.0% |
+| bit_manipulation | 80.6% | 83.8% | 83.8% |
+| equation_numeric_deduce | 88.3% | 88.3% | 85.0% |
+| equation_numeric_guess | 7.1% | 7.1% | 14.3% |
+| cryptarithm_deduce | 6.1% | 7.6% | 9.1% |
+| cryptarithm_guess | 0.0% | 0.0% | 0.0% |
+| **TOTAL** | **86.3% (820/950)** | **86.9% (826/950)** | **87.1% (827/950)** |
 
 ### r=64 各类别明细
 
 | category | alpha=16 | alpha=32 | alpha=64 |
 |---|---:|---:|---:|
-| numeral | 待补充 | 待补充 | 待补充 |
-| gravity | 待补充 | 待补充 | 待补充 |
-| unit_conversion | 待补充 | 待补充 | 待补充 |
-| cipher | 待补充 | 待补充 | 待补充 |
-| bit_manipulation | 待补充 | 待补充 | 待补充 |
-| equation_numeric_deduce | 待补充 | 待补充 | 待补充 |
-| equation_numeric_guess | 待补充 | 待补充 | 待补充 |
-| cryptarithm_deduce | 待补充 | 待补充 | 待补充 |
-| cryptarithm_guess | 待补充 | 待补充 | 待补充 |
-| **TOTAL** | 待补充 | 待补充 | 待补充 |
+| numeral | 100.0% | 100.0% | 100.0% |
+| gravity | 100.0% | 100.0% | 100.0% |
+| unit_conversion | 100.0% | 100.0% | 100.0% |
+| cipher | 100.0% | 98.7% | 100.0% |
+| bit_manipulation | 80.6% | 80.6% | 81.9% |
+| equation_numeric_deduce | 86.7% | 86.7% | 86.7% |
+| equation_numeric_guess | 7.1% | 7.1% | 7.1% |
+| cryptarithm_deduce | 6.1% | 6.1% | 7.6% |
+| cryptarithm_guess | 0.0% | 0.0% | 0.0% |
+| **TOTAL** | **86.3% (820/950)** | **86.1% (818/950)** | **86.6% (823/950)** |
 
 ## 兼容性问题与处理
 
