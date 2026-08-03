@@ -81,8 +81,10 @@ VLLM_ENGINE_PARAMS = {
     'trust_remote_code': True,
     'enable_prefix_caching': True,
     'enable_chunked_prefill': True,
-    # enable_lora / max_lora_rank are set by the provider when
-    # adapter_path is present; do not duplicate them here.
+    # max_lora_rank raised to 64 for the r/alpha grid search
+    # (r=64 exceeds the competition ceiling of 32 -> off-competition only;
+    #  64 also correctly evaluates r<=32 adapters, results unchanged).
+    'max_lora_rank': 64,
 }
 
 
