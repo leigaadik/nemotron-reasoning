@@ -1,62 +1,26 @@
 # Nemotron Reasoning
 
-本仓库用于 NVIDIA Nemotron Reasoning Challenge 的 LoRA 微调与本地验证，当前实验基座模型是 **Qwen3-30B-A3B**。
+Unified Qwen3-30B-A3B LoRA training and evaluation for the NVIDIA Nemotron
+Reasoning Challenge.
 
-## 当前结论
-
-在 950 题固定验证集上，当前 Qwen3 结果如下：
-
-| 模型 | 设置 | 分数 |
-|---|---|---:|
-| Qwen3-30B-A3B | SFT 前 | **65.3%** (620/950) |
-| Qwen3-30B-A3B | SFT 后 | **69.7%** (662/950) |
-
-详细分类结果见：
-
-- `docs/experiments/prompting_baselines.md`
-- `docs/experiments/lora_finetuning.md`
-
-## 仓库结构
+## Framework
 
 ```text
-configs/
-  eval/                                  固定验证集 id
-  training/                              LoRA 训练配置
-scripts/
-  create_validation_split.py             构造固定验证集
-  generate_baseline.py                   base model zero-shot 推理
-  evaluate_adapter.py                    base + LoRA adapter 推理
-  evaluate_baseline.py                   读取 raw outputs 并打分
-src/
-  data/                                  SFT 数据构造
-  evaluation/                            答案抽取与评分
-  prompting/                             验证集读取
-  providers/                             vLLM 推理封装
-  training/                              YAML 配置解析与采样工具
-docs/experiments/                        实验记录与运行说明
-data/
-  train.csv                              原始训练集
-  train_split_with_cot.csv               SFT 训练数据
+legacy external CoT CSV ─┐
+                         ├─> common tokenized JSONL ─> Transformers Trainer
+solver-verified synthetic┘                               + Unsloth LoRA
+                                                                  |
+                                        ┌─────────────────────────┴──────────┐
+                                        v                                    v
+                                   current_950                         reference_8224
 ```
 
-## 评测约束
+The two data pipelines share the same Qwen chat renderer, explicit
+completion-only labels, collator, sampler, optimizer, scheduler, and LoRA
+configuration. Inference uses one vLLM runner and scoring implementation for
+both benchmark suites.
 
-训练结果产出 LoRA adapter，而不是完整模型。评估时用 vLLM 加载 base model 和 adapter，并要求最终答案尽量放在 LaTeX `\boxed{}` 中。
-
-关键参数：
-
-```text
-base model: NVIDIA Nemotron-3-Nano-30B
-max_lora_rank: 32
-max_tokens: 7680
-top_p: 1.0
-temperature: 0.0
-max_num_seqs: 64
-gpu_memory_utilization: 0.85
-max_model_len: 8192
-```
-
-## 环境
+## Environment
 
 ```bash
 conda create -n nemotron python=3.10 -y
@@ -64,57 +28,94 @@ conda activate nemotron
 pip install -r requirements.txt
 ```
 
-## 模型权重
+Local model weights are expected at:
 
-模型权重不入库，需要自行下载到 `models/` 目录下：
-
-```bash
-huggingface-cli download Qwen/Qwen3-30B-A3B \
-  --local-dir ./models/Qwen3-30B-A3B
+```text
+models/Qwen3-30B-A3B/
 ```
 
-## Qwen3-30B LoRA 训练
+## Build Training Data
+
+Historical external CoT:
 
 ```bash
-HF_HUB_OFFLINE=1 \
-TRANSFORMERS_OFFLINE=1 \
-ACCELERATE_BYPASS_DEVICE_MAP=true \
-PYTHONUNBUFFERED=1 \
-python scripts/train_lora_unsloth.py \
-  --config configs/training/lora_unsloth_qwen3_30b_a3b.yaml
+python scripts/build_data.py --config configs/data/legacy.yaml
 ```
 
-## Zero-Shot 推理与评分
+Solver-verified synthetic CoT:
 
 ```bash
-python scripts/generate_baseline.py \
-  --model-name qwen3-30b-a3b \
-  --model-path ./models/Qwen3-30B-A3B \
-  --out results/prompting_baselines/qwen3-30b-a3b \
-  --force
-
-python scripts/evaluate_baseline.py \
-  --run-dir results/prompting_baselines/qwen3-30b-a3b
+python scripts/build_data.py --config configs/data/synthetic_pilot.yaml
 ```
 
-## LoRA Adapter 推理与评分
+Both outputs use the same pre-tokenized JSONL schema. Legacy benchmark overlap
+is measured and recorded; synthetic benchmark overlap is forbidden.
+
+## Train an Adapter
+
+Copy and edit the template config, then run:
+```bash
+cp configs/training/legacy.yaml configs/training/<experiment>.yaml
+# edit: experiment.name, paths.train_jsonl, paths.adapter_dir, training.output_dir
+
+python scripts/train.py --config configs/training/<experiment>.yaml
+# or: bash scripts/run_lora.sh
+```
+Adapters are written to:
+
+```text
+outputs/adapters/legacy-cot-transformers/
+outputs/adapters/synthetic-cot-transformers/
+```
+
+## Run Four Evaluations
 
 ```bash
-python scripts/evaluate_adapter.py \
-  --model-name qwen3-30b-a3b-lora \
-  --base-model ./models/Qwen3-30B-A3B \
-  --adapter outputs/lora_finetuning/qwen3_30b_a3b/adapter \
-  --out results/lora_finetuning/qwen3-30b-a3b-lora \
-  --force
-
-python scripts/evaluate_baseline.py \
-  --run-dir results/lora_finetuning/qwen3-30b-a3b-lora
+bash scripts/run_evaluation_matrix.sh \
+  ./models/Qwen3-30B-A3B \
+  outputs/adapters/legacy-cot-transformers \
+  outputs/adapters/synthetic-cot-transformers \
+  results/evaluation_matrix/qwen3-30b
 ```
 
-## 开发进度
+This runs four independent model processes:
 
-- ✅ 训练与推理环境配置。
-- ✅ LoRA SFT 实验框架搭建。
-- ✅ zero-shot 与 LoRA adapter 的推理评估流程。
-- ✅ Qwen3-30B-A3B 固定验证集上的 SFT 前后对比。
-- ⬜ 系统性的超参数搜索实验。
+| Adapter | current_950 | reference_8224 |
+|---|---|---|
+| legacy-cot-transformers | evaluation | evaluation |
+| synthetic-cot-transformers | evaluation | evaluation |
+
+The combined result is written to `matrix_summary.csv`. Each matrix cell also
+contains raw outputs, run metadata, per-example results, category summaries,
+mistake files, and logs.
+
+## Documentation
+
+- `docs/unified_framework.md`: framework and command reference.
+- `docs/experiments/synthetic_qwen_pilot.md`: completed synthetic pilot results.
+- `docs/experiments/`: historical experiment records.
+
+## Main Files
+
+```text
+configs/data/                    legacy and synthetic data configurations
+configs/training/                common training config plus two overrides
+configs/eval/                    two benchmark suites
+data/                             source CSVs (train split, reference eval set)
+docs/                             framework reference and experiment records
+notebooks/evaluation/             reference notebooks (adapter validation, metric)
+scripts/build_data.py            unified data builder
+scripts/train.py                 unified Transformers Trainer entry
+scripts/infer.py                 unified base/LoRA vLLM entry
+scripts/score.py                 unified scoring entry
+scripts/run_lora.sh              template: single LoRA training run
+scripts/run_evaluation_matrix.sh run and summarize the four evaluations
+src/data/                        data adapters, schema rendering, validation
+src/generators/                  problem generators (nemotron, 7 categories)
+src/training/                    Trainer and collator
+src/inference/                   vLLM runner
+src/evaluation/                  suites, scoring, reporting
+src/prompting/                   zero-shot prompting-baseline dataset loader
+src/providers/                   inference provider backends (local vLLM)
+tests/                            unit tests for data/config/validation modules
+```

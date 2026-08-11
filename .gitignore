@@ -29,3 +29,8 @@ checkpoint*/
 *.gguf
 env_snapshots/
 unsloth_compiled_cache/
+
+# Result artifacts (large, regenerable)
+results/
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,6 @@
+suite:
+  name: current_950
+  questions_csv: data/train.csv
+  ids_csv: configs/eval/validation_ids_seed42_size950.csv
+  category_column: type
+  expected_size: 950

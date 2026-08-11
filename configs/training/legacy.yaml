@@ -1,0 +1,12 @@
+extends: base.yaml
+
+experiment:
+  name: legacy-cot-transformers
+  description: Qwen3-30B-A3B LoRA SFT on the historical external CoT dataset
+
+paths:
+  train_jsonl: outputs/data/legacy/qwen_traces.jsonl
+  adapter_dir: outputs/adapters/legacy-cot-transformers
+
+training:
+  output_dir: outputs/trainer/legacy-cot-transformers
