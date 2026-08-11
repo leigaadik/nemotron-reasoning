@@ -1,10 +1,9 @@
 """Local vLLM provider for prompting baseline and LoRA adapter runs.
 
-Mirrors the vLLM setup in
-`notebooks/evaluation/adapter_validation.ipynb` (cells 8/13/16). Baseline
-runs load the base model only; LoRA adapter runs additionally attach an
-adapter via vLLM's `LoRARequest`, matching how the official evaluator
-combines base + adapter at inference time.
+Uses one local vLLM engine for base-model and LoRA Adapter inference.
+Baseline runs load the base model only; LoRA Adapter runs additionally attach
+an adapter via vLLM's `LoRARequest`, matching how the evaluator combines
+base model and adapter at inference time.
 
 Key behaviours:
 - The chat template is applied via the tokenizer, with `enable_thinking`

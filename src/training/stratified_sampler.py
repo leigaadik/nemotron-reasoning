@@ -1,4 +1,4 @@
-"""Approximate stratified training order used by the reference notebook."""
+"""Approximate stratified training order for category-balanced LoRA SFT."""
 
 from __future__ import annotations
 

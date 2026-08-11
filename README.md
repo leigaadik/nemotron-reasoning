@@ -6,15 +6,14 @@ Reasoning Challenge.
 ## Framework
 
 ```text
-legacy external CoT CSV ─┐
-                         ├─> common tokenized JSONL ─> Transformers Trainer
-solver-verified synthetic┘                               + Unsloth LoRA
-                                                                  |
-                                                                  v
-                                                             current_950
+legacy external CoT CSV ─────┐
+solver-verified synthetic CoT ─┼─> common tokenized JSONL ─> Transformers Trainer + Unsloth LoRA
+template low-quality CoT ──────┘                                      |
+                                                                      v
+                                                                 current_950
 ```
 
-The two data pipelines share the same Qwen chat renderer, explicit
+The three data pipelines share the same Qwen chat renderer, explicit
 completion-only labels, collator, sampler, optimizer, scheduler, and LoRA
 configuration. Inference uses one vLLM runner and scoring implementation for
 the current_950 benchmark suite.
@@ -47,8 +46,20 @@ Solver-verified synthetic CoT:
 python scripts/build_data.py --config configs/data/synthetic_pilot.yaml
 ```
 
-Both outputs use the same pre-tokenized JSONL schema. Legacy benchmark overlap
-is measured and recorded; synthetic benchmark overlap is forbidden.
+Template low-quality CoT ablation:
+
+```bash
+python scripts/build_low_quality_cot_csv.py \
+  --input-csv data/train.csv \
+  --output-csv data/train_split_low_quality_cot.csv \
+  --n 9500 \
+  --seed 42
+python scripts/build_data.py --config configs/data/low_quality.yaml
+```
+
+All outputs use the same pre-tokenized JSONL schema. Legacy and low-quality
+benchmark overlap is measured and recorded; synthetic benchmark overlap is
+forbidden.
 
 ## Train an Adapter
 
@@ -65,6 +76,7 @@ Adapters are written to:
 ```text
 outputs/adapters/legacy-cot-transformers/
 outputs/adapters/synthetic-cot-transformers/
+outputs/adapters/low-quality-cot-transformers/
 ```
 
 ## Run Evaluations
@@ -91,18 +103,16 @@ Repeat with `synthetic-cot-transformers` and `low-quality-cot-transformers` by c
 ## Documentation
 
 - `docs/reproduction.md`: end-to-end experiment reproduction steps.
-- `docs/experiments/synthetic_qwen_pilot.md`: completed synthetic pilot results.
-- `docs/experiments/`: historical experiment records.
+- `docs/experiment_log.md`: consolidated experiment results.
 
 ## Main Files
 
 ```text
-configs/data/                    legacy and synthetic data configurations
-configs/training/                common training config plus two overrides
+configs/data/                    legacy, synthetic, and low-quality data configurations
+configs/training/                common training config plus three LoRA overrides
 configs/eval/                    current_950 benchmark suite
 data/                             source CSVs and training splits
 docs/                             reproduction guide and experiment records
-notebooks/evaluation/             reference notebooks (adapter validation, metric)
 scripts/build_data.py            unified data builder
 scripts/train.py                 unified Transformers Trainer entry
 scripts/infer.py                 unified base/LoRA vLLM entry

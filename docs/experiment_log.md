@@ -75,8 +75,8 @@ cryptarithm_guess 截断率 100%，cryptarithm_deduce 97%，bit_manipulation 64%
 python scripts/build_data.py --config configs/data/legacy.yaml
 python scripts/build_data.py --config configs/data/synthetic_pilot.yaml
 python scripts/build_low_quality_cot_csv.py \
-  --input data/train.csv \
-  --output data/train_split_low_quality_cot.csv
+  --input-csv data/train.csv \
+  --output-csv data/train_split_low_quality_cot.csv
 python scripts/build_data.py --config configs/data/low_quality.yaml
 ```
 
@@ -84,9 +84,9 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 | 实验组 | 配置文件 | 训练 JSONL | Adapter 输出目录 |
 |---|---|---|---|
-| Legacy CoT | `configs/training/legacy.yaml` | `outputs/data/legacy/train.jsonl` | `outputs/adapters/legacy` |
-| Synthetic pilot | `configs/training/synthetic.yaml` | `outputs/data/synthetic_pilot/train.jsonl` | `outputs/adapters/synthetic_pilot` |
-| Low-quality CoT | `configs/training/low_quality.yaml` | `outputs/data/low_quality/train.jsonl` | `outputs/adapters/low_quality` |
+| Legacy CoT | `configs/training/legacy.yaml` | `outputs/data/legacy/qwen_traces.jsonl` | `outputs/adapters/legacy-cot-transformers` |
+| Synthetic pilot | `configs/training/synthetic.yaml` | `outputs/data/synthetic_pilot/qwen_traces.jsonl` | `outputs/adapters/synthetic-cot-transformers` |
+| Low-quality CoT | `configs/training/low_quality.yaml` | `outputs/data/low_quality/qwen_traces.jsonl` | `outputs/adapters/low-quality-cot-transformers` |
 
 评估统一使用 `configs/eval/current_950.yaml`，并通过 `scripts/infer.py` 和 `scripts/score.py` 分别完成推理和评分。
 

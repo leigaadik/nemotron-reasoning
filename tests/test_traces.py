@@ -47,6 +47,8 @@ def test_qwen_renderer_matches_chat_template():
     AutoTokenizer = transformers.AutoTokenizer
 
     model_path = Path(__file__).resolve().parents[1] / "models" / "Qwen3-30B-A3B"
+    if not model_path.exists():
+        pytest.skip("Qwen3-30B-A3B tokenizer is not available locally")
     tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
     user = "Question" + PROMPT_SUFFIX
     assistant = "<think>\nReason\n</think>\n\\boxed{42}"

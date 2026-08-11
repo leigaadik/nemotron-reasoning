@@ -10,12 +10,24 @@ def test_deep_merge_preserves_shared_training_fields():
 
 
 def test_training_overrides_extend_common_base():
-    legacy, _ = load_config("configs/training/legacy.yaml")
-    synthetic, _ = load_config("configs/training/synthetic.yaml")
-    legacy_training = {k: v for k, v in legacy["training"].items() if k != "output_dir"}
-    synthetic_training = {
-        k: v for k, v in synthetic["training"].items() if k != "output_dir"
+    configs = {
+        name: load_config(f"configs/training/{name}.yaml")[0]
+        for name in ("legacy", "synthetic", "low_quality")
     }
-    assert legacy_training == synthetic_training
-    assert legacy["lora"] == synthetic["lora"]
-    assert legacy["paths"]["train_jsonl"] != synthetic["paths"]["train_jsonl"]
+    baseline = configs["legacy"]
+    baseline_training = {
+        k: v for k, v in baseline["training"].items() if k != "output_dir"
+    }
+
+    for name, config in configs.items():
+        training = {k: v for k, v in config["training"].items() if k != "output_dir"}
+        assert training == baseline_training, name
+        assert config["lora"] == baseline["lora"], name
+        assert config["model"] == baseline["model"], name
+
+    train_jsonls = {config["paths"]["train_jsonl"] for config in configs.values()}
+    adapter_dirs = {config["paths"]["adapter_dir"] for config in configs.values()}
+    output_dirs = {config["training"]["output_dir"] for config in configs.values()}
+    assert len(train_jsonls) == len(configs)
+    assert len(adapter_dirs) == len(configs)
+    assert len(output_dirs) == len(configs)
