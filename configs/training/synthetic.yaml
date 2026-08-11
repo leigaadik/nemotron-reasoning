@@ -1,0 +1,12 @@
+extends: base.yaml
+
+experiment:
+  name: synthetic-cot-transformers
+  description: Qwen3-30B-A3B LoRA SFT on solver-verified synthetic CoT
+
+paths:
+  train_jsonl: outputs/data/synthetic_pilot/qwen_traces.jsonl
+  adapter_dir: outputs/adapters/synthetic-cot-transformers
+
+training:
+  output_dir: outputs/trainer/synthetic-cot-transformers

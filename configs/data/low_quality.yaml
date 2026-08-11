@@ -1,0 +1,11 @@
+model:
+  tokenizer_path: ./models/Qwen3-30B-A3B
+  trust_remote_code: true
+
+data:
+  source: legacy
+  input_csv: data/train_split_low_quality_cot.csv
+  traces_jsonl: outputs/data/low_quality/qwen_traces.jsonl
+  max_length: 8192
+  min_cot_chars: 5
+  evaluation_overlap: allow

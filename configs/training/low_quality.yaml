@@ -1,0 +1,12 @@
+extends: base.yaml
+
+experiment:
+  name: low-quality-cot-transformers
+  description: Qwen3-30B-A3B LoRA SFT on fabricated low-quality CoT
+
+paths:
+  train_jsonl: outputs/data/low_quality/qwen_traces.jsonl
+  adapter_dir: outputs/adapters/low-quality-cot-transformers
+
+training:
+  output_dir: outputs/trainer/low-quality-cot-transformers
