@@ -27,7 +27,6 @@ models/Qwen3-30B-A3B/
 可使用 Hugging Face CLI 下载到该路径：
 
 ```bash
-hf download Qwen/Qwen3-30B-A3B \
   --local-dir models/Qwen3-30B-A3B
 ```
 
@@ -425,3 +424,147 @@ results/hparam_search/legacy_ml7680_lr1e-4_r32/current_950/current_950_mistakes/
 | 训练轮数 | `training.num_train_epochs` |
 
 每个实验必须使用唯一的 `experiment.name`、`paths.adapter_dir`、`training.output_dir` 和评估输出目录，避免覆盖已有结果。
+
+## 7. 多尺寸模型实验
+
+本节说明如何将第 3–5 节的流程复用到不同尺寸的 Qwen3 模型。训练数据无需重新构建（全系列共用同一 tokenizer），只需下载目标模型、新建训练配置文件，然后将各步骤命令中的模型路径和命名替换即可。
+
+### 7.1 模型权重下载
+
+所有模型权重统一放在 `models/` 目录下：
+
+```bash
+# Qwen3-0.6B
+hf download Qwen/Qwen3-0.6B --local-dir models/Qwen3-0.6B
+
+# Qwen3-1.7B
+hf download Qwen/Qwen3-1.7B --local-dir models/Qwen3-1.7B
+
+# Qwen3-4B
+hf download Qwen/Qwen3-4B --local-dir models/Qwen3-4B
+
+# Qwen3-8B
+hf download Qwen/Qwen3-8B --local-dir models/Qwen3-8B
+
+# Qwen3-14B
+hf download Qwen/Qwen3-14B --local-dir models/Qwen3-14B
+
+# Qwen3-32B
+hf download Qwen/Qwen3-32B --local-dir models/Qwen3-32B
+
+```
+
+### 7.2 训练配置文件
+
+以 `Qwen3-1.7B` + synthetic CoT 为例。每个实验需要一个配置文件，继承 `base.yaml` 并只覆盖与模型相关的字段：
+
+```bash
+cat > configs/training/qwen3-1.7b-synthetic.yaml << 'EOF'
+extends: base.yaml
+
+experiment:
+  name: qwen3-1.7b-synthetic-cot
+  description: Qwen3-1.7B LoRA SFT on solver-verified synthetic CoT
+
+model:
+  base_model_name: Qwen/Qwen3-1.7B
+  model_path: ./models/Qwen3-1.7B
+
+paths:
+  train_jsonl: outputs/data/synthetic_pilot/qwen_traces.jsonl
+  adapter_dir: outputs/adapters/qwen3-1.7b-synthetic-cot
+
+training:
+  output_dir: outputs/trainer/qwen3-1.7b-synthetic-cot
+EOF
+```
+
+三组数据集各需一个配置文件，替换以下字段：
+
+| 数据集 | `experiment.name` | `paths.train_jsonl` | `paths.adapter_dir` | `training.output_dir` |
+|---|---|---|---|---|
+| legacy | `qwen3-<size>-legacy-cot` | `outputs/data/legacy/qwen_traces.jsonl` | `outputs/adapters/qwen3-<size>-legacy-cot` | `outputs/trainer/qwen3-<size>-legacy-cot` |
+| synthetic | `qwen3-<size>-synthetic-cot` | `outputs/data/synthetic_pilot/qwen_traces.jsonl` | `outputs/adapters/qwen3-<size>-synthetic-cot` | `outputs/trainer/qwen3-<size>-synthetic-cot` |
+| low-quality | `qwen3-<size>-low-quality-cot` | `outputs/data/low_quality/qwen_traces.jsonl` | `outputs/adapters/qwen3-<size>-low-quality-cot` | `outputs/trainer/qwen3-<size>-low-quality-cot` |
+
+`<size>` 替换为实际尺寸标识，如 `1.7b`、`4b`、`8b` 等，保持全局唯一。
+
+### 7.3 训练
+
+```bash
+python scripts/train.py --config configs/training/qwen3-<size>-<dataset>.yaml \
+  2>&1 | tee outputs/logs/train_qwen3-<size>-<dataset>-cot.log
+```
+
+以 1.7B synthetic 为例：
+
+```bash
+python scripts/train.py --config configs/training/qwen3-1.7b-synthetic.yaml \
+  2>&1 | tee outputs/logs/train_qwen3-1.7b-synthetic-cot.log
+```
+
+### 7.4 推理
+
+**零样本**（无 adapter）：
+
+```bash
+python scripts/infer.py \
+  --run-name qwen3-<size>-zeroshot \
+  --base-model ./models/Qwen3-<Size> \
+  --suite configs/eval/current_950.yaml \
+  --out results/zeroshot/qwen3-<size>/current_950 \
+  --force
+```
+
+**LoRA adapter**：
+
+```bash
+python scripts/infer.py \
+  --run-name qwen3-<size>-<dataset>-cot \
+  --base-model ./models/Qwen3-<Size> \
+  --adapter outputs/adapters/qwen3-<size>-<dataset>-cot \
+  --suite configs/eval/current_950.yaml \
+  --out results/adapter_eval/qwen3-<size>/qwen3-<size>-<dataset>-cot/current_950 \
+  --force
+```
+
+以 1.7B synthetic adapter 为例：
+
+```bash
+python scripts/infer.py \
+  --run-name qwen3-1.7b-synthetic-cot \
+  --base-model ./models/Qwen3-1.7B \
+  --adapter outputs/adapters/qwen3-1.7b-synthetic-cot \
+  --suite configs/eval/current_950.yaml \
+  --out results/adapter_eval/qwen3-1.7b/qwen3-1.7b-synthetic-cot/current_950 \
+  --force
+```
+
+### 7.5 评分
+
+**零样本**：
+
+```bash
+python scripts/score.py \
+  --suite configs/eval/current_950.yaml \
+  --raw-outputs results/zeroshot/qwen3-<size>/current_950/qwen3-<size>-zeroshot__current_950_raw_outputs.jsonl \
+  --out results/zeroshot/qwen3-<size>/current_950
+```
+
+**LoRA adapter**：
+
+```bash
+python scripts/score.py \
+  --suite configs/eval/current_950.yaml \
+  --raw-outputs results/adapter_eval/qwen3-<size>/qwen3-<size>-<dataset>-cot/current_950/qwen3-<size>-<dataset>-cot__current_950_raw_outputs.jsonl \
+  --out results/adapter_eval/qwen3-<size>/qwen3-<size>-<dataset>-cot/current_950
+```
+
+以 1.7B synthetic adapter 为例：
+
+```bash
+python scripts/score.py \
+  --suite configs/eval/current_950.yaml \
+  --raw-outputs results/adapter_eval/qwen3-1.7b/qwen3-1.7b-synthetic-cot/current_950/qwen3-1.7b-synthetic-cot__current_950_raw_outputs.jsonl \
+  --out results/adapter_eval/qwen3-1.7b/qwen3-1.7b-synthetic-cot/current_950
+```
