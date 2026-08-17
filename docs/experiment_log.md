@@ -402,6 +402,36 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 | **TOTAL** | **25.8% (245/950)** | **56.1% (533/950)** | **86.9% (826/950)** | **90.7% (862/950)** |
 
 
+#### Qwen3-14B
+
+| 类别 | zeroshot | Low-quality CoT | Legacy CoT | Synthetic CoT |
+|---|---:|---:|---:|---:|
+| bit_manipulation | — | — | — | — |
+| cipher | — | — | — | — |
+| cryptarithm_deduce | — | — | — | — |
+| cryptarithm_guess | — | — | — | — |
+| equation_numeric_deduce | — | — | — | — |
+| equation_numeric_guess | — | — | — | — |
+| gravity | — | — | — | — |
+| numeral | — | — | — | — |
+| unit_conversion | — | — | — | — |
+| **TOTAL** | **—** | **—** | **—** | **—** |
+
+#### Qwen3-32B
+
+| 类别 | zeroshot | Low-quality CoT | Legacy CoT | Synthetic CoT |
+|---|---:|---:|---:|---:|
+| bit_manipulation | — | — | — | — |
+| cipher | — | — | — | — |
+| cryptarithm_deduce | — | — | — | — |
+| cryptarithm_guess | — | — | — | — |
+| equation_numeric_deduce | — | — | — | — |
+| equation_numeric_guess | — | — | — | — |
+| gravity | — | — | — | — |
+| numeral | — | — | — | — |
+| unit_conversion | — | — | — | — |
+| **TOTAL** | **—** | **—** | **—** | **—** |
+
 #### Qwen3-30B-A3B
 
 | 类别 | zeroshot | Low-quality CoT | Legacy CoT | Synthetic CoT |
