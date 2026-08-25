@@ -1,0 +1,16 @@
+extends: base.yaml
+
+experiment:
+  name: qwen3-32b-low-quality-cot
+  description: Qwen3-32B LoRA SFT on fabricated low-quality CoT
+
+model:
+  base_model_name: Qwen/Qwen3-32B
+  model_path: ./models/Qwen3-32B
+
+paths:
+  train_jsonl: outputs/data/low_quality/qwen_traces.jsonl
+  adapter_dir: outputs/adapters/qwen3-32b-low-quality-cot
+
+training:
+  output_dir: outputs/trainer/qwen3-32b-low-quality-cot
