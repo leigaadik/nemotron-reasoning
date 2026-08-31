@@ -1,0 +1,23 @@
+extends: base.yaml
+
+experiment:
+  name: qwen3-30b-a3b-m4-r16-synthetic-cot
+  description: Qwen3-30B-A3B bf16 LoRA (r=16, m4=attn) on synthetic CoT (13794 rows) — module ablation
+
+model:
+  base_model_name: Qwen/Qwen3-30B-A3B
+  model_path: ./models/Qwen3-30B-A3B
+
+paths:
+  train_jsonl: outputs/data/synthetic_pilot/qwen_traces.jsonl
+  adapter_dir: outputs/adapters/qwen3-30b-a3b-m4-r16-synthetic-cot
+
+lora:
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+
+training:
+  output_dir: outputs/trainer/qwen3-30b-a3b-m4-r16-synthetic-cot

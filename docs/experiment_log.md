@@ -306,6 +306,76 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 **结论**：r=16/alpha=32 与 r=32/alpha=64 并列最优（87.1%），r 更大带来参数量增加但收益递减；r=16 以更少参数达到同等效果，后续数据对比实验采用 r=16/alpha=32。
 
 
+### 4.6 微调模块消融
+
+消融 LoRA `target_modules` 的覆盖范围对微调效果的影响。Qwen3-30B-A3B 包含三类可微调线性层：注意力层（q/k/v/o_proj）、MoE 专家 FFN 层（gate/up/down_proj，128 专家 × 48 层）、专家路由层（mlp.gate）。
+
+#### 实验配置
+
+| 配置 | target_modules | 可训练参数（r=16） |
+|---|---|---|
+| m4（attn） | q_proj, k_proj, v_proj, o_proj | ~13M |
+| m5（attn+router） | q_proj, k_proj, v_proj, o_proj, mlp.gate | ~15M |
+| m7（attn+ffn） | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj | ~843M |
+| m8（attn+ffn+router） | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj, mlp.gate | ~845M |
+
+其余配置与 §5（多尺寸实验）保持一致：r=16, alpha=32, bf16，推理使用 bfloat16。
+
+#### current_950 汇总结果
+
+| 配置 | Low-Quality CoT | Legacy CoT | Synthetic CoT |
+|---|---:|---:|---:|
+| m4（attn） | 65.9% | 86.9% | - |
+| m5（attn+router） | 65.5% | 86.5% | - |
+| **m7（attn+ffn）** | **72.0%** | **87.1%** | - |
+| m8（attn+ffn+router） | 67.7% | 86.8% | - |
+
+#### 各类别明细 — Low-Quality CoT
+
+| 类别 | m4 | m5 | m7 | m8 |
+|---|---:|---:|---:|---:|
+| bit_manipulation | 45.0% | 45.0% | 46.3% | 40.0% |
+| cipher | 39.5% | 31.2% | **84.1%** | 56.1% |
+| cryptarithm_deduce | 7.6% | 9.1% | 7.6% | 7.6% |
+| cryptarithm_guess | 0% | 0% | 0% | 0% |
+| equation_numeric_deduce | 56.7% | 53.3% | 48.3% | 51.7% |
+| equation_numeric_guess | 14.3% | 14.3% | 21.4% | 14.3% |
+| gravity | 83.8% | 90.0% | 77.5% | 85.6% |
+| numeral | 100% | 100% | 100% | 100% |
+| unit_conversion | 100% | 100% | 100% | 99.4% |
+| **TOTAL** | **65.9%** | **65.5%** | **72.0%** | **67.7%** |
+
+#### 各类别明细 — Legacy CoT
+
+| 类别 | m4 | m5 | m7 | m8 |
+|---|---:|---:|---:|---:|
+| bit_manipulation | 81.9% | 79.4% | 82.5% | 80.6% |
+| cipher | 100% | 100% | 100% | 100% |
+| cryptarithm_deduce | 9.1% | 9.1% | 9.1% | 9.1% |
+| cryptarithm_guess | 0% | 0% | 0% | 0% |
+| equation_numeric_deduce | 90.0% | 90.0% | 90.0% | 90.0% |
+| equation_numeric_guess | 7.1% | 7.1% | 7.1% | 14.3% |
+| gravity | 100% | 100% | 100% | 100% |
+| numeral | 100% | 100% | 100% | 100% |
+| unit_conversion | 100% | 100% | 100% | 100% |
+| **TOTAL** | **86.9%** | **86.5%** | **87.1%** | **86.8%** |
+
+#### 各类别明细 — Synthetic CoT
+
+| 类别 | m4 | m5 | m7 | m8 |
+|---|---:|---:|---:|---:|
+| bit_manipulation | - | - | - | - |
+| cipher | - | - | - | - |
+| cryptarithm_deduce | - | - | - | - |
+| cryptarithm_guess | - | - | - | - |
+| equation_numeric_deduce | - | - | - | - |
+| equation_numeric_guess | - | - | - | - |
+| gravity | - | - | - | - |
+| numeral | - | - | - | - |
+| unit_conversion | - | - | - | - |
+| **TOTAL** | - | - | - | - |
+
+
 ## 5. 多尺寸实验结果
 
 ### 5.1 实验配置
@@ -446,27 +516,11 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 | numeral | 99.4% (157/158) | 100.0% (158/158) | 100.0% (158/158) | 100.0% (158/158) |
 | unit_conversion | 26.4% (42/159) | 99.4% (158/159) | 100.0% (159/159) | 100.0% (159/159) |
 | TOTAL | 30.8% (293/950) | 72.1% (685/950) | 86.9% (826/950) | 91.2% (866/950) |
+### 5.4 各模型 LoRA 参数统计
 
-## 6. LoRA 微调参数详情
+数据来源：训练日志中 Unsloth/PEFT 的 `print_trainable_parameters()` 实际输出（配置同 §5.1：r=16, alpha=32, target_modules=q/k/v/o_proj）。
 
-本节记录各模型在当前 LoRA 配置下的精确参数统计，数据来源为训练日志中 `model.print_trainable_parameters()` 的实际输出。
-
-### 6.1 统一 LoRA 配置
-
-| 配置项 | 取值 |
-|---|---|
-| LoRA rank (r) | 16 |
-| LoRA alpha (α) | 32 |
-| LoRA dropout | 0.0 |
-| bias | none |
-| target_modules | q_proj, k_proj, v_proj, o_proj |
-| 微调范围 | 所有 Transformer 层的 4 个 attention projection 模块 |
-
-### 6.2 各模型参数统计
-
-数据来源：训练日志中 Unsloth/PEFT 的 `print_trainable_parameters()` 输出。
-
-| 模型 | 模型总参数 (all params) | LoRA 可训练参数 (trainable params) | 可训练占比 (trainable%) | 微调模块数 |
+| 模型 | 模型总参数 | LoRA 可训练参数 | 可训练占比 | 微调模块数 |
 |---|---:|---:|---:|---:|
 | Qwen3-0.6B | 600,637,440 | 4,587,520 | 0.7638% | 28层 × 4 = 112 |
 | Qwen3-1.7B | 1,726,997,504 | 6,422,528 | 0.3719% | 28层 × 4 = 112 |
