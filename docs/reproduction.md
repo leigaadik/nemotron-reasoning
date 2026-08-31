@@ -27,7 +27,7 @@ models/Qwen3-30B-A3B/
 可使用 Hugging Face CLI 下载到该路径：
 
 ```bash
-  --local-dir models/Qwen3-30B-A3B
+hf download Qwen/Qwen3-30B-A3B --local-dir models/Qwen3-30B-A3B
 ```
 
 ## 1. 零样本推理与评估
