@@ -7,6 +7,8 @@
 | 零样本推理 | 5 个模型直接推理，无微调 |
 | LoRA 数据对比 | 统一框架，对比 legacy / synthetic / low-quality 三组数据 |
 | 超参数搜索 | legacy CoT 数据，搜索 max_length / batch / lr / r-alpha |
+| 微调模块消融 | 对比 m4/m5/m7/m8 四种 target_modules 配置 × 三组数据 |
+| 多尺寸实验 | 7 个 Qwen3 模型 × 4 组训练集（含 zeroshot） |
 
 评估集：`current_950`，共 950 题。
 
@@ -325,10 +327,10 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 | 配置 | Low-Quality CoT | Legacy CoT | Synthetic CoT |
 |---|---:|---:|---:|
-| m4（attn） | 65.9% | 86.9% | - |
-| m5（attn+router） | 65.5% | 86.5% | - |
-| **m7（attn+ffn）** | **72.0%** | **87.1%** | - |
-| m8（attn+ffn+router） | 67.7% | 86.8% | - |
+| m4（attn） | 65.9% | 86.9% | 91.3% |
+| **m5（attn+router）** | 65.5% | 86.5% | **91.5%** |
+| m7（attn+ffn） | **72.0%** | **87.1%** | 90.6%† |
+| m8（attn+ffn+router） | 67.7% | 86.8% | 91.1% |
 
 #### 各类别明细 — Low-Quality CoT
 
@@ -364,16 +366,18 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 | 类别 | m4 | m5 | m7 | m8 |
 |---|---:|---:|---:|---:|
-| bit_manipulation | - | - | - | - |
-| cipher | - | - | - | - |
-| cryptarithm_deduce | - | - | - | - |
-| cryptarithm_guess | - | - | - | - |
-| equation_numeric_deduce | - | - | - | - |
-| equation_numeric_guess | - | - | - | - |
-| gravity | - | - | - | - |
-| numeral | - | - | - | - |
-| unit_conversion | - | - | - | - |
-| **TOTAL** | - | - | - | - |
+| bit_manipulation | 97.5% | **98.8%** | 95.6%† | 97.5% |
+| cipher | 100% | 100% | 98.7%† | 99.4% |
+| cryptarithm_deduce | 12.1% | 12.1% | 10.6%† | 12.1% |
+| cryptarithm_guess | 12.5% | 12.5% | 12.5%† | 12.5% |
+| equation_numeric_deduce | 100% | 100% | 100%† | 98.3% |
+| equation_numeric_guess | 50.0% | 50.0% | 50.0%† | 50.0% |
+| gravity | 100% | 100% | 100%† | 100% |
+| numeral | 100% | 100% | 100%† | 100% |
+| unit_conversion | 100% | 100% | 100%† | 100% |
+| **TOTAL** | **91.3%** | **91.5%** | **90.6%**† | **91.1%** |
+
+† m7 Synthetic CoT 正在重跑中，此处为首次实验结果，待重跑完成后更新。
 
 
 ## 5. 多尺寸实验结果
