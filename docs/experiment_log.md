@@ -329,7 +329,7 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 |---|---:|---:|---:|
 | m4（attn） | 65.9% | 86.9% | 91.3% |
 | **m5（attn+router）** | 65.5% | 86.5% | **91.5%** |
-| m7（attn+ffn） | **72.0%** | **87.1%** | 90.6%† |
+| m7（attn+ffn） | **72.0%** | **87.1%** | 91.2% |
 | m8（attn+ffn+router） | 67.7% | 86.8% | 91.1% |
 
 #### 各类别明细 — Low-Quality CoT
@@ -366,18 +366,16 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 | 类别 | m4 | m5 | m7 | m8 |
 |---|---:|---:|---:|---:|
-| bit_manipulation | 97.5% | **98.8%** | 95.6%† | 97.5% |
-| cipher | 100% | 100% | 98.7%† | 99.4% |
-| cryptarithm_deduce | 12.1% | 12.1% | 10.6%† | 12.1% |
-| cryptarithm_guess | 12.5% | 12.5% | 12.5%† | 12.5% |
-| equation_numeric_deduce | 100% | 100% | 100%† | 98.3% |
-| equation_numeric_guess | 50.0% | 50.0% | 50.0%† | 50.0% |
-| gravity | 100% | 100% | 100%† | 100% |
-| numeral | 100% | 100% | 100%† | 100% |
-| unit_conversion | 100% | 100% | 100%† | 100% |
-| **TOTAL** | **91.3%** | **91.5%** | **90.6%**† | **91.1%** |
-
-† m7 Synthetic CoT 正在重跑中，此处为首次实验结果，待重跑完成后更新。
+| bit_manipulation | 97.5% | **98.8%** | 98.1% | 97.5% |
+| cipher | 100% | 100% | 98.7% | 99.4% |
+| cryptarithm_deduce | 12.1% | 12.1% | 12.1% | 12.1% |
+| cryptarithm_guess | 12.5% | 12.5% | 12.5% | 12.5% |
+| equation_numeric_deduce | 100% | 100% | 100% | 98.3% |
+| equation_numeric_guess | 50.0% | 50.0% | 50.0% | 50.0% |
+| gravity | 100% | 100% | 100% | 100% |
+| numeral | 100% | 100% | 100% | 100% |
+| unit_conversion | 100% | 100% | 100% | 100% |
+| **TOTAL** | **91.3%** | **91.5%** | **91.2%** | **91.1%** |
 
 
 ## 5. 多尺寸实验结果
