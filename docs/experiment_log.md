@@ -310,6 +310,14 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 ### 4.6 微调模块消融
 
+> **⚠️ 实验结果不可信，待重跑**
+>
+> 经事后排查，本节四组配置（m4/m5/m7/m8）**实际训练的参数完全相同**，均只微调了注意力层（q/k/v/o_proj，共 13,369,344 参数），FFN 专家层从未被纳入 LoRA。
+>
+> 根本原因：`runner.py` 将 `target_modules` 列表传入 `FastLanguageModel.get_peft_model()`，Unsloth 内部将其编译为匹配 dense 模型路径的正则（`mlp.gate_proj`），但 Qwen3-30B-A3B 的 MoE 专家路径为 `mlp.experts.Y.gate_proj`，正则不匹配，导致 m5/m7/m8 声称覆盖的 FFN 层实际未被微调。
+>
+> 修复方案：修改 `runner.py`，对含 FFN 模块的配置改用 PEFT `LoraConfig(target_modules=regex)` 直接传入完整路径正则，绕过 Unsloth 的编译。修复后需重跑 m5/m7/m8 × 3 数据集共 9 组实验。
+
 消融 LoRA `target_modules` 的覆盖范围对微调效果的影响。Qwen3-30B-A3B 包含三类可微调线性层：注意力层（q/k/v/o_proj）、MoE 专家 FFN 层（gate/up/down_proj，128 专家 × 48 层）、专家路由层（mlp.gate）。
 
 #### 实验配置
