@@ -137,9 +137,9 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 **Legacy CoT token 长度分布（Qwen3-30B-A3B tokenizer，9,500 条完整 SFT 序列）：**
 
-![SFT token length overall](experiments/figures/token_length_overall.png)
+![SFT token length overall](figures/token_length_overall.png)
 
-![SFT token length by category](experiments/figures/token_length_by_category.png)
+![SFT token length by category](figures/token_length_by_category.png)
 
 ### 3.4 current_950 结果
 
@@ -314,12 +314,12 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 #### 实验配置
 
-| 配置 | target_modules | 可训练参数（r=16） |
-|---|---|---|
-| m4（attn） | q_proj, k_proj, v_proj, o_proj | ~13M |
-| m5（attn+router） | q_proj, k_proj, v_proj, o_proj, mlp.gate | ~15M |
-| m7（attn+ffn） | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj | ~843M |
-| m8（attn+ffn+router） | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj, mlp.gate | ~845M |
+| 配置 | target_modules |
+|---|---|
+| m4（attn） | q_proj, k_proj, v_proj, o_proj |
+| m5（attn+router） | q_proj, k_proj, v_proj, o_proj, mlp.gate |
+| m7（attn+ffn） | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj |
+| m8（attn+ffn+router） | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj, mlp.gate |
 
 其余配置与 §5（多尺寸实验）保持一致：r=16, alpha=32, bf16，推理使用 bfloat16。
 
@@ -379,7 +379,7 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 #### 训练损失曲线
 
-下图展示四种模块配置（m4/m5/m7/m8）在三组数据集上的训练损失曲线（Y 轴对数坐标），上行为原始损失，下行为 EMA 平滑（α=0.9）后的曲线，列序从最差到最优数据质量排列。
+下图展示四种模块配置（m4/m5/m7/m8）在三组数据集上的训练损失曲线（Y 轴对数坐标），上行为原始损失，下行为 EMA 平滑（α=0.9）后的曲线。
 
 ![模块消融训练损失](figures/module_ablation_loss.png)
 
@@ -545,7 +545,7 @@ python scripts/build_data.py --config configs/data/low_quality.yaml
 
 ### 5.5 训练损失曲线
 
-下图展示全部 7 个模型尺寸在三组数据集上的训练损失曲线（Y 轴对数坐标），左列为原始损失，右列为 EMA 平滑（α=0.9）后的曲线，行序从最差到最优数据质量排列。
+下图展示全部 7 个模型尺寸在三组数据集上的训练损失曲线（Y 轴对数坐标），左列为原始损失，右列为 EMA 平滑（α=0.9）后的曲线。
 
 ![训练损失曲线（全尺寸 × 全数据集）](figures/training_loss_combined.png)
 
