@@ -88,6 +88,16 @@ def train(config: dict[str, Any], config_path: Path) -> Path:
     lora_config = config["lora"]
     paths = config["paths"]
     trainer_config = dict(config["training"])
+    optimizer_name = str(trainer_config.pop("optimizer", "adamw")).lower()
+    muon_config = dict(trainer_config.pop("muon", {}))
+    if optimizer_name not in {"adamw", "muon"}:
+        raise ValueError(
+            f"Unsupported optimizer: {optimizer_name}. Expected 'adamw' or 'muon'."
+        )
+    if optimizer_name == "muon":
+        # These fields belong to AdamW and must not affect Muon experiments.
+        for key in ("adam_beta1", "adam_beta2", "adam_epsilon"):
+            trainer_config.pop(key, None)
     dataset_path = resolve_path(paths["train_jsonl"])
     dataset, categories = _load_training_dataset(dataset_path)
 
@@ -149,6 +159,46 @@ def train(config: dict[str, Any], config_path: Path) -> Path:
     class OrderedTrainer(Trainer):
         def _get_train_sampler(self, train_dataset=None):
             return OrderedSampler()
+
+        def create_optimizer(self):
+            if self.optimizer is not None:
+                return self.optimizer
+            if optimizer_name == "adamw":
+                return super().create_optimizer()
+
+            import torch
+
+            trainable = [
+                (name, parameter)
+                for name, parameter in self.model.named_parameters()
+                if parameter.requires_grad
+            ]
+            invalid = [
+                (name, tuple(parameter.shape))
+                for name, parameter in trainable
+                if parameter.ndim != 2
+            ]
+            if invalid:
+                preview = invalid[:8]
+                raise ValueError(
+                    "Muon requires every trainable parameter to be 2D; "
+                    f"invalid parameters: {preview}"
+                )
+
+            muon_kwargs = dict(muon_config)
+            muon_kwargs.pop("lr", None)
+            muon_kwargs.pop("weight_decay", None)
+            self.optimizer = torch.optim.Muon(
+                [parameter for _, parameter in trainable],
+                lr=self.args.learning_rate,
+                weight_decay=self.args.weight_decay,
+                **muon_kwargs,
+            )
+            print(
+                f"[train] optimizer: Muon ({len(trainable)} trainable tensors)",
+                flush=True,
+            )
+            return self.optimizer
 
     trainer = OrderedTrainer(
         model=model,

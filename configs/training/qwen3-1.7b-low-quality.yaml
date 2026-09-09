@@ -1,8 +1,8 @@
 extends: base.yaml
 
 experiment:
-  name: qwen3-1.7b-low-quality-cot
-  description: Qwen3-1.7B LoRA SFT on fabricated low-quality CoT
+  name: qwen3-1.7b-low-quality-cot-muon
+  description: Qwen3-1.7B LoRA SFT on fabricated low-quality CoT with Muon
 
 model:
   base_model_name: Qwen/Qwen3-1.7B
@@ -10,7 +10,12 @@ model:
 
 paths:
   train_jsonl: outputs/data/low_quality/qwen_traces.jsonl
-  adapter_dir: outputs/adapters/qwen3-1.7b-low-quality-cot
+  adapter_dir: outputs/adapters/qwen3-1.7b-low-quality-cot-muon
 
 training:
-  output_dir: outputs/trainer/qwen3-1.7b-low-quality-cot
+  optimizer: muon
+  output_dir: outputs/trainer/qwen3-1.7b-low-quality-cot-muon
+  muon:
+    momentum: 0.95
+    nesterov: true
+    ns_steps: 5

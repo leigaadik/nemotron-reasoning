@@ -1,0 +1,17 @@
+extends: base.yaml
+
+experiment:
+  name: qwen3-1.7b-legacy-cot-adamw
+  description: Qwen3-1.7B LoRA SFT on fabricated legacy CoT with AdamW
+
+model:
+  base_model_name: Qwen/Qwen3-1.7B
+  model_path: ./models/Qwen3-1.7B
+
+paths:
+  train_jsonl: outputs/data/legacy/qwen_traces.jsonl
+  adapter_dir: outputs/adapters/qwen3-1.7b-legacy-cot-adamw
+
+training:
+  optimizer: adamw
+  output_dir: outputs/trainer/qwen3-1.7b-legacy-cot-adamw
