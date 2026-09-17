@@ -11,6 +11,7 @@ from typing import Any
 from src.config import format_config, resolve_path
 from src.data.jsonl import read_jsonl
 from src.training.collator import ExplicitLabelsCollator
+from src.training.optimizers import build_optimizer_spec
 from src.training.stratified_sampler import build_stratified_index_order
 
 
@@ -87,6 +88,7 @@ def train(config: dict[str, Any], config_path: Path) -> Path:
     model_config = config["model"]
     lora_config = config["lora"]
     paths = config["paths"]
+    optimizer_config = config.get("optimizer", {"name": "adamw_torch_fused"})
     trainer_config = dict(config["training"])
     dataset_path = resolve_path(paths["train_jsonl"])
     dataset, categories = _load_training_dataset(dataset_path)
@@ -129,6 +131,11 @@ def train(config: dict[str, Any], config_path: Path) -> Path:
     trainer_config["output_dir"] = str(resolve_path(trainer_config["output_dir"]))
     trainer_config["seed"] = int(experiment["seed"])
     training_args = TrainingArguments(**trainer_config)
+    optimizer_cls, optimizer_kwargs = build_optimizer_spec(
+        optimizer_config, training_args, model
+    )
+    optimizer_name = f"{optimizer_cls.__module__}.{optimizer_cls.__name__}"
+    print(f"[train] optimizer: {optimizer_name} {optimizer_kwargs}", flush=True)
     effective_batch = (
         int(training_args.per_device_train_batch_size)
         * int(training_args.gradient_accumulation_steps)
@@ -155,6 +162,7 @@ def train(config: dict[str, Any], config_path: Path) -> Path:
         args=training_args,
         train_dataset=dataset,
         data_collator=ExplicitLabelsCollator(pad_token_id=int(tokenizer.pad_token_id)),
+        optimizer_cls_and_kwargs=(optimizer_cls, optimizer_kwargs),
     )
     print(f"[train] effective batch size: {effective_batch}", flush=True)
     print("[train] starting", flush=True)

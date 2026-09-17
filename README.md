@@ -71,6 +71,14 @@ cp configs/training/legacy.yaml configs/training/<experiment>.yaml
 python scripts/train.py --config configs/training/<experiment>.yaml
 # or: bash scripts/run_lora.sh
 ```
+
+The top-level `optimizer` section supports `adam`, `adam_bnb_8bit`,
+`adamw_torch`, `adamw_torch_fused`, `adamw_bnb_8bit`, `sgd`, `sgd_momentum`,
+and `muon`. Learning rate, weight decay, and Adam beta/epsilon values remain
+under `training`; optimizer-specific values go under `optimizer.kwargs`. Pure
+Muon requires every trainable parameter to be two-dimensional, which is checked before training starts. See
+`configs/training/qwen3-30b-a3b-synthetic-muon.yaml` for an example.
+
 Adapters are written to:
 
 ```text

@@ -568,3 +568,141 @@ python scripts/score.py \
   --raw-outputs results/adapter_eval/qwen3-1.7b/qwen3-1.7b-synthetic-cot/current_950/qwen3-1.7b-synthetic-cot__current_950_raw_outputs.jsonl \
   --out results/adapter_eval/qwen3-1.7b/qwen3-1.7b-synthetic-cot/current_950
 ```
+
+## 8. Muon NS5 优化器实验
+
+本实验在 Qwen3-30B-A3B 上使用 Legacy CoT 9,500 条数据，对以下 Muon 参数矩阵进行训练和 `current_950` 评估：
+
+| Learning rate | Weight decay |
+|---:|---:|
+| 2e-4 | 0 / 0.01 / 0.05 |
+| 1e-3 | 0 / 0.01 / 0.05 |
+
+所有配置固定：
+
+```yaml
+optimizer:
+  name: muon
+  kwargs:
+    momentum: 0.95
+    nesterov: true
+    ns_steps: 5
+    adjust_lr_fn: match_rms_adamw
+```
+
+学习率和 weight decay 分别配置在 `training.learning_rate` 和 `training.weight_decay`。六个配置文件命名为：
+
+```text
+configs/training/qwen3-30b-a3b-legacy-muon-ns5-lr2e-4-wd0.yaml
+configs/training/qwen3-30b-a3b-legacy-muon-ns5-lr2e-4-wd1e-2.yaml
+configs/training/qwen3-30b-a3b-legacy-muon-ns5-lr2e-4-wd5e-2.yaml
+configs/training/qwen3-30b-a3b-legacy-muon-ns5-lr1e-3-wd0.yaml
+configs/training/qwen3-30b-a3b-legacy-muon-ns5-lr1e-3-wd1e-2.yaml
+configs/training/qwen3-30b-a3b-legacy-muon-ns5-lr1e-3-wd5e-2.yaml
+```
+
+批量训练并评估：
+
+```bash
+bash scripts/run_muon_ns5_legacy.sh all
+```
+
+只执行训练或评估：
+
+```bash
+bash scripts/run_muon_ns5_legacy.sh train
+bash scripts/run_muon_ns5_legacy.sh eval
+```
+
+执行指定单组实验：
+
+```bash
+bash scripts/run_muon_ns5_legacy.sh all \
+  qwen3-30b-a3b-legacy-muon-ns5-lr2e-4-wd1e-2
+```
+
+训练日志、adapter 和评估结果分别写入：
+
+```text
+outputs/logs/train-<run-name>.log
+outputs/adapters/<run-name>/
+results/optimizer_ablation/<run-name>/current_950/
+```
+
+训练日志应包含实际优化器类和参数，例如：
+
+```text
+[train] Muon trainable parameter dimensions: {2: 384}
+[train] optimizer: torch.optim.Muon {'lr': 0.0002, 'weight_decay': 0.01, 'momentum': 0.95, 'nesterov': True, 'ns_steps': 5, 'adjust_lr_fn': 'match_rms_adamw'}
+```
+
+## 9. 跨数据集优化器对比
+
+该实验固定 Qwen3-30B-A3B、LoRA r/alpha=16/32、effective batch size=4、epoch=1、seed=123 和 cosine scheduler，在 Low-quality、Legacy、Synthetic 三组数据上分别训练六种优化器，共 18 组。
+
+| 参数 | AdamW | Adam | Adam 8-bit | SGD | Momentum SGD | Muon |
+|---|---:|---:|---:|---:|---:|---:|
+| optimizer | adamw_torch_fused | adam | adam_bnb_8bit | sgd | sgd_momentum | muon |
+| implementation | torch.optim.AdamW | torch.optim.Adam | bitsandbytes.optim.Adam | torch.optim.SGD | torch.optim.SGD | torch.optim.Muon |
+| fused | true | false | - | false | false | - |
+| learning rate | 2e-4 | 2e-4 | 2e-4 | 2e-4 | 2e-4 | 1e-3 |
+| weight decay | 0 | 0 | 0 | 0 | 0 | 0.05 |
+| min_lr | 1e-5 | 1e-5 | 1e-5 | 1e-5 | 1e-5 | 5e-5 |
+| beta1 | 0.9 | 0.9 | 0.9 | - | - | - |
+| beta2 | 0.95 | 0.95 | 0.95 | - | - | - |
+| epsilon | 1e-8 | 1e-8 | 1e-8 | - | - | - |
+| momentum | - | - | - | 0 | 0.9 | 0.95 |
+| nesterov | - | - | - | false | false | true |
+| ns_steps | - | - | - | - | - | 5 |
+| adjust_lr_fn | - | - | - | - | - | match_rms_adamw |
+
+配置文件：
+
+```text
+configs/training/qwen3-30b-a3b-low-quality-adamw-optcmp.yaml
+configs/training/qwen3-30b-a3b-low-quality-adam-optcmp.yaml
+configs/training/qwen3-30b-a3b-low-quality-adam8bit-optcmp.yaml
+configs/training/qwen3-30b-a3b-low-quality-sgd-optcmp.yaml
+configs/training/qwen3-30b-a3b-low-quality-momentum-optcmp.yaml
+configs/training/qwen3-30b-a3b-low-quality-muon-optcmp.yaml
+configs/training/qwen3-30b-a3b-legacy-adamw-optcmp.yaml
+configs/training/qwen3-30b-a3b-legacy-adam-optcmp.yaml
+configs/training/qwen3-30b-a3b-legacy-adam8bit-optcmp.yaml
+configs/training/qwen3-30b-a3b-legacy-sgd-optcmp.yaml
+configs/training/qwen3-30b-a3b-legacy-momentum-optcmp.yaml
+configs/training/qwen3-30b-a3b-legacy-muon-optcmp.yaml
+configs/training/qwen3-30b-a3b-synthetic-adamw-optcmp.yaml
+configs/training/qwen3-30b-a3b-synthetic-adam-optcmp.yaml
+configs/training/qwen3-30b-a3b-synthetic-adam8bit-optcmp.yaml
+configs/training/qwen3-30b-a3b-synthetic-sgd-optcmp.yaml
+configs/training/qwen3-30b-a3b-synthetic-momentum-optcmp.yaml
+configs/training/qwen3-30b-a3b-synthetic-muon-optcmp.yaml
+```
+
+依次训练并评估全部实验：
+
+```bash
+bash scripts/run_optimizer_cross_data.sh all
+```
+
+仅执行训练或评估：
+
+```bash
+bash scripts/run_optimizer_cross_data.sh train
+bash scripts/run_optimizer_cross_data.sh eval
+```
+
+执行单组实验：
+
+```bash
+bash scripts/run_optimizer_cross_data.sh all \
+  qwen3-30b-a3b-synthetic-muon-optcmp
+```
+
+输出位置：
+
+```text
+outputs/logs/train-<run-name>.log
+outputs/adapters/<run-name>/
+results/optimizer_comparison/<run-name>/current_950/
+```

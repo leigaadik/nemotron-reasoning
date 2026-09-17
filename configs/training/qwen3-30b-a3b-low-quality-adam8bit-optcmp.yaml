@@ -1,0 +1,19 @@
+extends: qwen3-30b-a3b-low-quality.yaml
+
+experiment:
+  name: qwen3-30b-a3b-low-quality-adam8bit-optcmp
+  description: Low-quality CoT LoRA with 8-bit Adam
+
+paths:
+  adapter_dir: outputs/adapters/qwen3-30b-a3b-low-quality-adam8bit-optcmp
+
+optimizer:
+  name: adam_bnb_8bit
+  kwargs: {}
+
+training:
+  output_dir: outputs/trainer/qwen3-30b-a3b-low-quality-adam8bit-optcmp
+  learning_rate: 2.0e-4
+  weight_decay: 0.0
+  lr_scheduler_kwargs:
+    min_lr: 1.0e-5

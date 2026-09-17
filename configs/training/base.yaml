@@ -30,6 +30,10 @@ lora:
     - v_proj
     - o_proj
 
+optimizer:
+  name: adamw_torch_fused
+  kwargs: {}
+
 training:
   output_dir: outputs/trainer/qwen3-30b-lora
   num_train_epochs: 1
